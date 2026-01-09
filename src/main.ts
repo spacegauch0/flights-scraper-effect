@@ -3,7 +3,7 @@
  */
 import "reflect-metadata"
 import { Effect, Layer } from "effect"
-import { TuiLive, TUI } from "./tui"
+import { TuiLive, TUI } from "./ui"
 import { ScraperProtobufLive } from "./services"
 import { BunRuntime } from "@effect/platform-bun"
 
@@ -12,12 +12,13 @@ const main = Effect.gen(function* () {
   const tui = yield* TUI
   // Render the initial UI
   yield* tui.render()
-  // Attach event listeners and start the renderer event loop
-  yield* tui.attachEventListeners()
 })
 
 // Define the layers for the application
-const TuiLayer = TuiLive.pipe(Layer.provide(ScraperProtobufLive))
+const TuiLayer = TuiLive.pipe(Layer.provide(ScraperProtobufLive), Layer.provide(TuiState.Live))
+
+// Launch the application
+const runnable = main.pipe(Layer.launch, Effect.provide(TuiLayer))
 
 // Run the application
-BunRuntime.runMain(main.pipe(Effect.provide(TuiLayer)))
+BunRuntime.runMain(runnable)

@@ -27,15 +27,6 @@ export type SortOption =
   | "airline"        // Airline: alphabetical
   | "none"           // No sorting (default order)
 
-/** Individual flight segment (leg) for building booking URLs */
-export class FlightSegment extends Schema.Class<FlightSegment>("FlightSegment")({
-  origin: Schema.String,       // Airport code (e.g., "EZE")
-  destination: Schema.String,  // Airport code (e.g., "FRA")
-  date: Schema.String,         // Date in YYYY-MM-DD format
-  airline: Schema.String,      // Airline IATA code (e.g., "LH")
-  flight_number: Schema.String // Flight number (e.g., "511")
-}) {}
-
 /** Defines what the clean, desired output looks like */
 export class FlightOption extends Schema.Class<FlightOption>("FlightOption")({
   is_best: Schema.optional(Schema.Boolean),
@@ -47,8 +38,7 @@ export class FlightOption extends Schema.Class<FlightOption>("FlightOption")({
   stops: Schema.Number,        // Number of stops
   delay: Schema.optional(Schema.String), // Delay information if any
   price: Schema.String,        // Price as formatted string
-  deep_link: Schema.optional(Schema.String), // Direct booking/details link
-  segments: Schema.optional(Schema.Array(FlightSegment)) // Flight segments for booking URL
+  deep_link: Schema.optional(Schema.String) // Direct booking/details link
 }) {}
 
 /** Result with price indicator and flights */
