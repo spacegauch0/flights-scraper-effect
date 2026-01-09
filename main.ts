@@ -2,12 +2,12 @@
  * Main entry point for the Google Flights scraper
  */
 
-import { Effect, Console, Exit } from "effect"
+import { Effect, Console } from "effect"
 import { ScraperService, ScraperProtobufLive } from "./src"
 import { FlightFilters, SortOption, TripType, SeatClass, Passengers } from "./src/domain"
 
-const program = Effect.gen(function* (_) {
-  const scraper = yield* _(ScraperService)
+const program = Effect.gen(function* () {
+  const scraper = yield* ScraperService
 
   // --- Configuration ---
   const from = "AEP"
@@ -46,10 +46,10 @@ const program = Effect.gen(function* (_) {
   // --- End Configuration ---
 
   const tripDescription = returnDate ? ` (Return: ${returnDate})` : ` (${tripType})`
-  yield* _(Console.log(`🕷️  Starting Flight Scraper: ${from} -> ${to} on ${departDate}${tripDescription}`))
-  yield* _(Console.log(`👥 Passengers: ${passengers.adults} adult(s), ${passengers.children} child(ren), ${passengers.infants_in_seat} infant(s) in seat, ${passengers.infants_on_lap} infant(s) on lap`))
-  yield* _(Console.log(`💺 Seat class: ${seat}`))
-  yield* _(Console.log(`📊 Sorting by: ${sortOption}`))
+  yield* Console.log(`🕷️  Starting Flight Scraper: ${from} -> ${to} on ${departDate}${tripDescription}`)
+  yield* Console.log(`👥 Passengers: ${passengers.adults} adult(s), ${passengers.children} child(ren), ${passengers.infants_in_seat} infant(s) in seat, ${passengers.infants_on_lap} infant(s) on lap`)
+  yield* Console.log(`💺 Seat class: ${seat}`)
+  yield* Console.log(`📊 Sorting by: ${sortOption}`)
   
   const activeFilters = Object.entries(filters)
     .filter(([, value]) => value !== undefined)
@@ -57,18 +57,18 @@ const program = Effect.gen(function* (_) {
     .join(", ")
   
   if (activeFilters) {
-    yield* _(Console.log(`🔍 Filters active - ${activeFilters}`))
+    yield* Console.log(`🔍 Filters active - ${activeFilters}`)
   }
 
-  const result = yield* _(scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency))
+  const result = yield* scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency)
 
   if (result.flights.length === 0) {
-    yield* _(Console.warn("❌ Scraper finished but found no flight results."))
+    yield* Console.warn("❌ Scraper finished but found no flight results.")
   } else {
-    yield* _(Console.log(`\n✅ Successfully found ${result.flights.length} flight options:`))
+    yield* Console.log(`\n✅ Successfully found ${result.flights.length} flight options:`)
     
     if (result.current_price) {
-      yield* _(Console.log(`💰 Price level: ${result.current_price.toUpperCase()}\n`))
+      yield* Console.log(`💰 Price level: ${result.current_price.toUpperCase()}\n`)
     }
     
     result.flights.forEach((f, i) => {
@@ -86,15 +86,20 @@ const program = Effect.gen(function* (_) {
   }
 })
 
-Effect.runPromiseExit(
-  program.pipe(Effect.provide(ScraperProtobufLive))
-).then(exit => {
-  if (Exit.isFailure(exit)) {
-    console.error("\n--- PROGRAM FAILED ---")
-    console.error(exit.cause)
-    process.exit(1)
-  } else {
-    console.log("--- PROGRAM COMPLETE ---")
-    process.exit(0)
-  }
-})
+// Using Effect.match for idiomatic error handling (per Effect docs best practices)
+const runnable = program.pipe(
+  Effect.provide(ScraperProtobufLive),
+  Effect.match({
+    onFailure: (error) => {
+      console.error("\n--- PROGRAM FAILED ---")
+      console.error(error)
+      process.exit(1)
+    },
+    onSuccess: () => {
+      console.log("--- PROGRAM COMPLETE ---")
+      process.exit(0)
+    }
+  })
+)
+
+Effect.runPromise(runnable)

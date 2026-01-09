@@ -25,8 +25,8 @@ export const encodeFlightSearch = (
   seat: SeatClass,
   passengers: Passengers
 ): Effect.Effect<string, ScraperError> =>
-  Effect.gen(function* (_) {
-    try {
+  Effect.try({
+    try: () => {
       // Create protobuf schema matching flights.proto from Python implementation
       const root = protobuf.Root.fromJSON({
         nested: {
@@ -43,7 +43,7 @@ export const encodeFlightSearch = (
               date: { type: "string", id: 2 },
               from_flight: { type: "Airport", id: 13 },
               to_flight: { type: "Airport", id: 14 },
-              max_stops: { type: "int32", id: 5, optional: true },
+              max_stops: { type: "int32", id: 5 },
               airlines: { rule: "repeated", type: "string", id: 6 }
             }
           },
@@ -135,16 +135,12 @@ export const encodeFlightSearch = (
         .replace(/=/g, "")
 
       return urlSafe
-    } catch (error) {
-      return yield* _(
-        Effect.fail(
-          new ScraperError({
-            reason: "ParsingError",
-            message: `Failed to encode flight search: ${error}`
-          })
-        )
-      )
-    }
+    },
+    catch: (error) =>
+      new ScraperError({
+        reason: "ParsingError",
+        message: `Failed to encode flight search: ${error}`
+      })
   })
 
 /**
@@ -157,8 +153,8 @@ export const buildFlightUrl = (
   passengers: Passengers,
   currency: string = ""
 ): Effect.Effect<string, ScraperError> =>
-  Effect.gen(function* (_) {
-    const tfs = yield* _(encodeFlightSearch(flightData, tripType, seat, passengers))
+  Effect.gen(function* () {
+    const tfs = yield* encodeFlightSearch(flightData, tripType, seat, passengers)
     const params = new URLSearchParams({
       tfs,
       hl: "en",

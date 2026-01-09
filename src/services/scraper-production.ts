@@ -15,41 +15,39 @@ import * as cheerio from "cheerio"
  * Fetches the Google Flights HTML via HTTP with retry logic
  */
 const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, RateLimiterService> =>
-  Effect.gen(function* (_) {
+  Effect.gen(function* () {
     // Acquire rate limit token
-    const rateLimiter = yield* _(RateLimiterService)
-    yield* _(rateLimiter.acquire())
+    const rateLimiter = yield* RateLimiterService
+    yield* rateLimiter.acquire()
 
     // Fetch with retry
-    return yield* _(
-      withRetryAndLog(
-        Effect.tryPromise({
-          try: async () => {
-            const response = await fetch(url, {
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Cache-Control": "max-age=0"
-              }
-            })
-
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    return yield* withRetryAndLog(
+      Effect.tryPromise({
+        try: async () => {
+          const response = await fetch(url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.5",
+              "Accept-Encoding": "gzip, deflate, br",
+              "Connection": "keep-alive",
+              "Upgrade-Insecure-Requests": "1",
+              "Sec-Fetch-Dest": "document",
+              "Sec-Fetch-Mode": "navigate",
+              "Sec-Fetch-Site": "none",
+              "Cache-Control": "max-age=0"
             }
+          })
 
-            return await response.text()
-          },
-          catch: (e) => ScraperErrors.navigationFailed(url, String(e))
-        }),
-        "Fetch Google Flights HTML"
-      )
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+
+          return await response.text()
+        },
+        catch: (e) => ScraperErrors.navigationFailed(url, String(e))
+      }),
+      "Fetch Google Flights HTML"
     )
   })
 
@@ -205,8 +203,8 @@ const parseDurationToMinutes = (duration: string): number => {
   return hours * 60 + minutes
 }
 
-const sortFlights = (flights: FlightOption[], sortOption: SortOption): FlightOption[] => {
-  if (sortOption === "none") return flights
+const sortFlights = (flights: readonly FlightOption[], sortOption: SortOption): FlightOption[] => {
+  if (sortOption === "none") return [...flights]
 
   return [...flights].sort((a, b) => {
     switch (sortOption) {
@@ -232,7 +230,7 @@ const sortFlights = (flights: FlightOption[], sortOption: SortOption): FlightOpt
   })
 }
 
-const filterFlights = (flights: FlightOption[], filters: FlightFilters): FlightOption[] => {
+const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters): FlightOption[] => {
   return flights.filter(flight => {
     const price = parseFloat(flight.price.replace(/[^0-9.-]/g, "")) || 0
     const durationMinutes = parseDurationToMinutes(flight.duration)
@@ -260,16 +258,16 @@ const filterFlights = (flights: FlightOption[], filters: FlightFilters): FlightO
  */
 export const ScraperProductionLive = Layer.effect(
   ScraperService,
-  Effect.gen(function* (_) {
-    const cache = yield* _(CacheService)
-    const rateLimiter = yield* _(RateLimiterService)
+  Effect.gen(function* () {
+    const cache = yield* CacheService
+    const rateLimiter = yield* RateLimiterService
 
     return ScraperService.of({
       scrape: (from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency) =>
-        Effect.gen(function* (_) {
-          // Validate input
+        Effect.gen(function* () {
+          // Validate input (using yieldable error pattern)
           if (tripType === "round-trip" && !returnDate) {
-            return yield* _(Effect.fail(ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights")))
+            return yield* ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights")
           }
 
           // Defaults
@@ -287,9 +285,9 @@ export const ScraperProductionLive = Layer.effect(
             passengerCounts.infants_on_lap
           )
 
-          const cached = yield* _(cache.get(cacheKey))
+          const cached = yield* cache.get(cacheKey)
           if (cached) {
-            yield* _(Console.log("📦 Cache hit! Using cached results"))
+            yield* Console.log("📦 Cache hit! Using cached results")
             
             // Still apply client-side filtering and sorting
             const filteredFlights = filterFlights(cached.flights, filters)
@@ -321,29 +319,29 @@ export const ScraperProductionLive = Layer.effect(
           }
 
           // Encode to tfs parameter
-          const tfs = yield* _(encodeFlightSearch(flightData, tripType, seatClass, passengerCounts))
+          const tfs = yield* encodeFlightSearch(flightData, tripType, seatClass, passengerCounts)
           
           // Build URL
           const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
           if (curr) params.set("curr", curr)
           const url = `https://www.google.com/travel/flights?${params.toString()}`
 
-          yield* _(Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`))
+          yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
           // Fetch HTML (with rate limiting and retry)
-          const html = yield* _(fetchFlightsHtml(url).pipe(Effect.provide(Layer.succeed(RateLimiterService, rateLimiter))))
-          yield* _(Console.log(`📄 Received ${html.length} bytes of HTML`))
+          const html = yield* fetchFlightsHtml(url).pipe(Effect.provide(Layer.succeed(RateLimiterService, rateLimiter)))
+          yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
 
           // Parse HTML
-          const result = yield* _(extractJavaScriptData(html))
-          yield* _(Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`))
+          const result = yield* extractJavaScriptData(html)
+          yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
 
           if (result.current_price) {
-            yield* _(Console.log(`💰 Price indicator: ${result.current_price}`))
+            yield* Console.log(`💰 Price indicator: ${result.current_price}`)
           }
 
           // Cache the raw results
-          yield* _(cache.set(cacheKey, result))
+          yield* cache.set(cacheKey, result)
 
           // Apply filters and sorting
           const filteredFlights = filterFlights(result.flights, filters)

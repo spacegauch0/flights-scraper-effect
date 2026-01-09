@@ -79,16 +79,16 @@ export const createCacheKey = (
 export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
   Layer.effect(
     CacheService,
-    Effect.gen(function* (_) {
+    Effect.gen(function* () {
       const { ttl = 15 * 60 * 1000, maxSize = 100 } = config
       
       // Create a ref to hold the cache
-      const cacheRef = yield* _(Ref.make(new Map<string, CacheEntry>()))
+      const cacheRef = yield* Ref.make(new Map<string, CacheEntry>())
 
       return CacheService.of({
         get: (key: string) =>
-          Effect.gen(function* (_) {
-            const cache = yield* _(Ref.get(cacheRef))
+          Effect.gen(function* () {
+            const cache = yield* Ref.get(cacheRef)
             const entry = cache.get(key)
 
             if (!entry) {
@@ -99,12 +99,10 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
             const now = Date.now()
             if (now - entry.timestamp > ttl) {
               // Remove expired entry
-              yield* _(
-                Ref.update(cacheRef, (cache) => {
-                  cache.delete(key)
-                  return cache
-                })
-              )
+              yield* Ref.update(cacheRef, (cache) => {
+                cache.delete(key)
+                return cache
+              })
               return null
             }
 
@@ -112,43 +110,41 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
           }),
 
         set: (key: string, value: Result) =>
-          Effect.gen(function* (_) {
+          Effect.gen(function* () {
             const now = Date.now()
 
-            yield* _(
-              Ref.update(cacheRef, (cache) => {
-                // Remove oldest entry if cache is full
-                if (cache.size >= maxSize) {
-                  let oldestKey: string | null = null
-                  let oldestTime = Infinity
+            yield* Ref.update(cacheRef, (cache) => {
+              // Remove oldest entry if cache is full
+              if (cache.size >= maxSize) {
+                let oldestKey: string | null = null
+                let oldestTime = Infinity
 
-                  for (const [k, v] of cache.entries()) {
-                    if (v.timestamp < oldestTime) {
-                      oldestTime = v.timestamp
-                      oldestKey = k
-                    }
-                  }
-
-                  if (oldestKey) {
-                    cache.delete(oldestKey)
+                for (const [k, v] of cache.entries()) {
+                  if (v.timestamp < oldestTime) {
+                    oldestTime = v.timestamp
+                    oldestKey = k
                   }
                 }
 
-                // Add new entry
-                cache.set(key, { data: value, timestamp: now })
-                return cache
-              })
-            )
+                if (oldestKey) {
+                  cache.delete(oldestKey)
+                }
+              }
+
+              // Add new entry
+              cache.set(key, { data: value, timestamp: now })
+              return cache
+            })
           }),
 
         clear: () =>
-          Effect.gen(function* (_) {
-            yield* _(Ref.set(cacheRef, new Map()))
+          Effect.gen(function* () {
+            yield* Ref.set(cacheRef, new Map())
           }),
 
         size: () =>
-          Effect.gen(function* (_) {
-            const cache = yield* _(Ref.get(cacheRef))
+          Effect.gen(function* () {
+            const cache = yield* Ref.get(cacheRef)
             return cache.size
           })
       })

@@ -625,12 +625,12 @@ async function main() {
     const sortOption: SortOption = "none"
     const returnDate = state.tripType === "round-trip" ? state.returnDate : undefined
 
-    const program = Effect.gen(function* (_) {
-      const scraper = yield* _(ScraperService)
-      return yield* _(scraper.scrape(
+    const program = Effect.gen(function* () {
+      const scraper = yield* ScraperService
+      return yield* scraper.scrape(
         state.origin, state.destination, state.departDate, state.tripType,
         returnDate, sortOption, filters, state.seatClass, state.passengers, "USD"
-      ))
+      )
     })
 
     const exit = await Effect.runPromiseExit(program.pipe(Effect.provide(ScraperProtobufLive)))

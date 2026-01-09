@@ -239,8 +239,8 @@ const parseHtmlFallback = (html: string): Result => {
 /**
  * Sorts flights based on the specified option
  */
-const sortFlights = (flights: FlightOption[], sortOption: SortOption): FlightOption[] => {
-  if (sortOption === "none") return flights
+const sortFlights = (flights: readonly FlightOption[], sortOption: SortOption): FlightOption[] => {
+  if (sortOption === "none") return [...flights]
 
   return [...flights].sort((a, b) => {
     switch (sortOption) {
@@ -283,7 +283,7 @@ const parseDurationToMinutes = (duration: string): number => {
 /**
  * Filters flights based on criteria
  */
-const filterFlights = (flights: FlightOption[], filters: FlightFilters): FlightOption[] => {
+const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters): FlightOption[] => {
   return flights.filter(flight => {
     const price = parseFloat(flight.price.replace(/[^0-9.-]/g, "")) || 0
     const durationMinutes = parseDurationToMinutes(flight.duration)
@@ -318,13 +318,13 @@ const filterFlights = (flights: FlightOption[], filters: FlightFilters): FlightO
  */
 export const ScraperProtobufLive = Layer.effect(
   ScraperService,
-  Effect.gen(function* (_) {
+  Effect.gen(function* () {
     return ScraperService.of({
       scrape: (from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency) =>
-        Effect.gen(function* (_) {
-          // Validate input
+        Effect.gen(function* () {
+          // Validate input (using yieldable error pattern)
           if (tripType === "round-trip" && !returnDate) {
-            return yield* _(Effect.fail(new ScraperError({ reason: "InvalidInput", message: "Return date is required for round-trip flights." })))
+            return yield* new ScraperError({ reason: "InvalidInput", message: "Return date is required for round-trip flights." })
           }
 
           // Default values
@@ -355,25 +355,25 @@ export const ScraperProtobufLive = Layer.effect(
           }
 
           // Encode to tfs parameter
-          const tfs = yield* _(encodeFlightSearch(flightData, tripType, seatClass, passengerCounts))
+          const tfs = yield* encodeFlightSearch(flightData, tripType, seatClass, passengerCounts)
           
           // Build URL
           const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
           if (curr) params.set("curr", curr)
           const url = `https://www.google.com/travel/flights?${params.toString()}`
 
-          yield* _(Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`))
+          yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
           // Fetch HTML
-          const html = yield* _(fetchFlightsHtml(url))
-          yield* _(Console.log(`📄 Received ${html.length} bytes of HTML`))
+          const html = yield* fetchFlightsHtml(url)
+          yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
 
           // Parse HTML (try JavaScript data first, fallback to HTML)
-          const result = yield* _(extractJavaScriptData(html))
-          yield* _(Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`))
+          const result = yield* extractJavaScriptData(html)
+          yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
 
           if (result.current_price) {
-            yield* _(Console.log(`💰 Price indicator: ${result.current_price}`))
+            yield* Console.log(`💰 Price indicator: ${result.current_price}`)
           }
 
           // Apply filters

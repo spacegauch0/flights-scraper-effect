@@ -51,67 +51,61 @@ export const RateLimiterService = Context.GenericTag<RateLimiterService>("RateLi
 export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterConfig) =>
   Layer.effect(
     RateLimiterService,
-    Effect.gen(function* (_) {
+    Effect.gen(function* () {
       const { maxRequests = 10, windowMs = 60000, minDelay = 2000 } = config
       
       // Store request timestamps
-      const requestsRef = yield* _(Ref.make<RequestRecord[]>([]))
-      const lastRequestRef = yield* _(Ref.make<number>(0))
+      const requestsRef = yield* Ref.make<RequestRecord[]>([])
+      const lastRequestRef = yield* Ref.make<number>(0)
 
       return RateLimiterService.of({
         acquire: () =>
-          Effect.gen(function* (_) {
+          Effect.gen(function* () {
             const now = Date.now()
             
             // Get current requests within the window
-            const requests = yield* _(Ref.get(requestsRef))
+            const requests = yield* Ref.get(requestsRef)
             const windowStart = now - windowMs
             const recentRequests = requests.filter(r => r.timestamp > windowStart)
 
-            // Check if we've exceeded the rate limit
+            // Check if we've exceeded the rate limit (using yieldable error pattern)
             if (recentRequests.length >= maxRequests) {
               const oldestRequest = recentRequests[0]
               const waitTime = oldestRequest.timestamp + windowMs - now
               
-              return yield* _(
-                Effect.fail(
-                  new ScraperError({
-                    reason: "Timeout",
-                    message: `Rate limit exceeded. Please wait ${Math.ceil(waitTime / 1000)} seconds before trying again.`
-                  })
-                )
-              )
+              return yield* new ScraperError({
+                reason: "Timeout",
+                message: `Rate limit exceeded. Please wait ${Math.ceil(waitTime / 1000)} seconds before trying again.`
+              })
             }
 
             // Check minimum delay between requests
-            const lastRequest = yield* _(Ref.get(lastRequestRef))
+            const lastRequest = yield* Ref.get(lastRequestRef)
             const timeSinceLastRequest = now - lastRequest
             
             if (timeSinceLastRequest < minDelay && lastRequest > 0) {
               const waitTime = minDelay - timeSinceLastRequest
-              yield* _(Effect.sleep(Duration.millis(waitTime)))
+              yield* Effect.sleep(Duration.millis(waitTime))
             }
 
             // Update request history
-            yield* _(
-              Ref.update(requestsRef, () => [
-                ...recentRequests,
-                { timestamp: Date.now() }
-              ])
-            )
+            yield* Ref.update(requestsRef, () => [
+              ...recentRequests,
+              { timestamp: Date.now() }
+            ])
             
-            yield* _(Ref.set(lastRequestRef, Date.now()))
+            yield* Ref.set(lastRequestRef, Date.now())
           }),
 
         reset: () =>
-          Effect.gen(function* (_) {
-            yield* _(Ref.set(requestsRef, []))
-            yield* _(Ref.set(lastRequestRef, 0))
+          Effect.gen(function* () {
+            yield* Ref.set(requestsRef, [])
+            yield* Ref.set(lastRequestRef, 0)
           }),
 
         getStats: () =>
-          Effect.gen(function* (_) {
-            const requests = yield* _(Ref.get(requestsRef))
+          Effect.gen(function* () {
+            const requests = yield* Ref.get(requestsRef)
             const now = Date.now()
             const windowStart = now - windowMs
             const recentRequests = requests.filter(r => r.timestamp > windowStart)

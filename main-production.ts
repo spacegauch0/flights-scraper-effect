@@ -2,12 +2,12 @@
  * Production example with caching, rate limiting, and retry logic
  */
 
-import { Effect, Console, Exit, Layer } from "effect"
+import { Effect, Console, Layer } from "effect"
 import { ScraperService, ScraperProductionLive, CacheLive, defaultCacheConfig, RateLimiterLive, defaultRateLimiterConfig } from "./src"
 import { FlightFilters, SortOption, TripType, SeatClass, Passengers } from "./src/domain"
 
-const program = Effect.gen(function* (_) {
-  const scraper = yield* _(ScraperService)
+const program = Effect.gen(function* () {
+  const scraper = yield* ScraperService
 
   // --- Configuration ---
   const from = "AEP"
@@ -40,12 +40,12 @@ const program = Effect.gen(function* (_) {
   const currency = ""
   // --- End Configuration ---
 
-  yield* _(Console.log(`🕷️  Starting Production Flight Scraper`))
+  yield* Console.log(`🕷️  Starting Production Flight Scraper`)
   const tripDescription = returnDate ? ` (Return: ${returnDate})` : ` (${tripType})`
-  yield* _(Console.log(`Route: ${from} -> ${to} on ${departDate}${tripDescription}`))
-  yield* _(Console.log(`👥 Passengers: ${passengers.adults} adult(s), ${passengers.children} child(ren)`))
-  yield* _(Console.log(`💺 Seat class: ${seat}`))
-  yield* _(Console.log(`📊 Sorting by: ${sortOption}`))
+  yield* Console.log(`Route: ${from} -> ${to} on ${departDate}${tripDescription}`)
+  yield* Console.log(`👥 Passengers: ${passengers.adults} adult(s), ${passengers.children} child(ren)`)
+  yield* Console.log(`💺 Seat class: ${seat}`)
+  yield* Console.log(`📊 Sorting by: ${sortOption}`)
   
   const activeFilters = Object.entries(filters)
     .filter(([, value]) => value !== undefined)
@@ -53,41 +53,41 @@ const program = Effect.gen(function* (_) {
     .join(", ")
   
   if (activeFilters) {
-    yield* _(Console.log(`🔍 Filters: ${activeFilters}`))
+    yield* Console.log(`🔍 Filters: ${activeFilters}`)
   }
 
-  yield* _(Console.log(`\n🚀 Features enabled:`))
-  yield* _(Console.log(`   ✅ Response caching (TTL: ${defaultCacheConfig.ttl! / 1000}s)`))
-  yield* _(Console.log(`   ✅ Rate limiting (${defaultRateLimiterConfig.maxRequests} req/${defaultRateLimiterConfig.windowMs! / 1000}s)`))
-  yield* _(Console.log(`   ✅ Retry with exponential backoff`))
-  yield* _(Console.log(`   ✅ Enhanced error messages\n`))
+  yield* Console.log(`\n🚀 Features enabled:`)
+  yield* Console.log(`   ✅ Response caching (TTL: ${defaultCacheConfig.ttl! / 1000}s)`)
+  yield* Console.log(`   ✅ Rate limiting (${defaultRateLimiterConfig.maxRequests} req/${defaultRateLimiterConfig.windowMs! / 1000}s)`)
+  yield* Console.log(`   ✅ Retry with exponential backoff`)
+  yield* Console.log(`   ✅ Enhanced error messages\n`)
 
   // First request
-  const result1 = yield* _(scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency))
+  const result1 = yield* scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency)
 
-  yield* _(Console.log(`\n✅ First request completed`))
-  yield* _(Console.log(`Found ${result1.flights.length} flights`))
+  yield* Console.log(`\n✅ First request completed`)
+  yield* Console.log(`Found ${result1.flights.length} flights`)
   if (result1.current_price) {
-    yield* _(Console.log(`💰 Price level: ${result1.current_price.toUpperCase()}`))
+    yield* Console.log(`💰 Price level: ${result1.current_price.toUpperCase()}`)
   }
 
   // Show first 3 flights
-  yield* _(Console.log(`\nTop 3 flights:`))
+  yield* Console.log(`\nTop 3 flights:`)
   result1.flights.slice(0, 3).forEach((f, i) => {
     console.log(`${i + 1}. ${f.name} - ${f.duration} - ${f.stops} stop(s) - ${f.price}`)
   })
 
   // Second request (should be cached)
-  yield* _(Console.log(`\n⏳ Making second request (should hit cache)...`))
-  const result2 = yield* _(scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency))
+  yield* Console.log(`\n⏳ Making second request (should hit cache)...`)
+  const result2 = yield* scraper.scrape(from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency)
   
-  yield* _(Console.log(`✅ Second request completed (${result2.flights.length} flights)`))
+  yield* Console.log(`✅ Second request completed (${result2.flights.length} flights)`)
 
   // Different route (should fetch new data)
-  yield* _(Console.log(`\n⏳ Making request for different route...`))
-  const result3 = yield* _(scraper.scrape("LAX", "NRT", "2025-12-25", "one-way", undefined, "price-asc", { limit: 5 }, seat, passengers, currency))
+  yield* Console.log(`\n⏳ Making request for different route...`)
+  const result3 = yield* scraper.scrape("LAX", "NRT", "2025-12-25", "one-way", undefined, "price-asc", { limit: 5 }, seat, passengers, currency)
   
-  yield* _(Console.log(`✅ Different route completed (${result3.flights.length} flights)`))
+  yield* Console.log(`✅ Different route completed (${result3.flights.length} flights)`)
 })
 
 // Compose all layers
@@ -97,15 +97,20 @@ const AppLive = ScraperProductionLive.pipe(
   Layer.provide(RateLimiterLive(defaultRateLimiterConfig))
 )
 
-Effect.runPromiseExit(
-  program.pipe(Effect.provide(AppLive))
-).then(exit => {
-  if (Exit.isFailure(exit)) {
-    console.error("\n--- PROGRAM FAILED ---")
-    console.error(exit.cause)
-    process.exit(1)
-  } else {
-    console.log("\n--- PROGRAM COMPLETE ---")
-    process.exit(0)
-  }
-})
+// Using Effect.match for idiomatic error handling (per Effect docs best practices)
+const runnable = program.pipe(
+  Effect.provide(AppLive),
+  Effect.match({
+    onFailure: (error) => {
+      console.error("\n--- PROGRAM FAILED ---")
+      console.error(error)
+      process.exit(1)
+    },
+    onSuccess: () => {
+      console.log("\n--- PROGRAM COMPLETE ---")
+      process.exit(0)
+    }
+  })
+)
+
+Effect.runPromise(runnable)
