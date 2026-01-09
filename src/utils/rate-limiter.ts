@@ -68,15 +68,15 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
             const windowStart = now - windowMs
             const recentRequests = requests.filter(r => r.timestamp > windowStart)
 
-            // Check if we've exceeded the rate limit (using yieldable error pattern)
+            // Check if we've exceeded the rate limit
             if (recentRequests.length >= maxRequests) {
               const oldestRequest = recentRequests[0]
               const waitTime = oldestRequest.timestamp + windowMs - now
               
-              return yield* new ScraperError({
-                reason: "Timeout",
+              return yield* Effect.fail(new ScraperError({
+                reason: "RateLimitExceeded",
                 message: `Rate limit exceeded. Please wait ${Math.ceil(waitTime / 1000)} seconds before trying again.`
-              })
+              }))
             }
 
             // Check minimum delay between requests

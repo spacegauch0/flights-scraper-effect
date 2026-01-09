@@ -12,10 +12,12 @@ import {
   SelectRenderableEvents,
   InputRenderableEvents,
 } from "@opentui/core"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Layer } from "effect"
+import { FetchHttpClient } from "@effect/platform"
 import { exec } from "child_process"
-import { ScraperService, ScraperProtobufLive, encodeFlightSearch } from "./src"
-import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "./src/domain"
+import { ScraperService, ScraperProtobufLive } from "../services"
+import { encodeFlightSearch } from "../utils"
+import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "../domain"
 
 /** Opens a URL in the default browser */
 function openInBrowser(url: string): void {
@@ -54,16 +56,29 @@ async function buildGoogleFlightsUrl(
   }
   
   // Try to encode using protobuf (same as scraper)
-  const result = await Effect.runPromiseExit(encodeFlightSearch(flightData, tripType, seatClass, passengers))
+  const result = await Effect.runPromiseExit(
+    encodeFlightSearch(flightData, tripType, seatClass, passengers).pipe(
+      Effect.map((tfs: string) => {
+        const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
+        if (currency) params.set("curr", currency)
+        return `https://www.google.com/travel/flights?${params.toString()}`
+      }),
+      Effect.catchAll(() => {
+        // Fallback to simple query URL if encoding fails
+        let searchQuery = `Flights from ${origin} to ${destination} on ${departDate}`
+        if (tripType === "round-trip" && returnDate) {
+          searchQuery += ` return ${returnDate}`
+        }
+        return Effect.succeed(`https://www.google.com/travel/flights?q=${encodeURIComponent(searchQuery)}`)
+      })
+    )
+  )
   
   if (Exit.isSuccess(result)) {
-    const tfs = result.value
-    const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
-    if (currency) params.set("curr", currency)
-    return `https://www.google.com/travel/flights?${params.toString()}`
+    return result.value
   }
   
-  // Fallback to simple query URL if encoding fails
+  // Final fallback if everything fails
   let searchQuery = `Flights from ${origin} to ${destination} on ${departDate}`
   if (tripType === "round-trip" && returnDate) {
     searchQuery += ` return ${returnDate}`
@@ -145,8 +160,8 @@ interface AppState {
 const state: AppState = {
   origin: "JFK",
   destination: "LHR",
-  departDate: "2025-12-25",
-  returnDate: "2025-12-30",
+  departDate: "2026-01-25",
+  returnDate: "2026-01-30",
   tripType: "one-way",
   seatClass: "economy",
   passengers: { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
@@ -288,13 +303,18 @@ function formatDateTimeCompact(value: string): string {
   return value.replace(" on ", " ").replace(/,\s*/g, " ")
 }
 
-async function main() {
+export async function runTui() {
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
     backgroundColor: colors.bg,
     useMouse: true,
     useAlternateScreen: true,
   })
+
+  // Compose layers once - provide FetchHttpClient for HTTP requests
+  const AppLive = ScraperProtobufLive.pipe(
+    Layer.provide(FetchHttpClient.layer)
+  )
 
   const { root } = renderer
 
@@ -387,23 +407,7 @@ async function main() {
   })
   formFields.add(destInput)
 
-  // Departure date
-  const departLabel = new TextRenderable(renderer, { content: "Date:", fg: colors.text })
-  formFields.add(departLabel)
-  const departInput = new InputRenderable(renderer, {
-    width: "100%",
-    height: 1,
-    value: state.departDate,
-    placeholder: "YYYY-MM-DD",
-    backgroundColor: colors.bg,
-    textColor: colors.text,
-    focusedBackgroundColor: colors.primaryDark,
-    focusedTextColor: colors.text,
-    maxLength: 10,
-  })
-  formFields.add(departInput)
-
-  // Trip type selector
+  // Trip type selector (moved to be below "To")
   const tripTypeLabel = new TextRenderable(renderer, { content: "Trip:", fg: colors.text })
   formFields.add(tripTypeLabel)
   const tripTypeSelect = new SelectRenderable(renderer, {
@@ -422,6 +426,106 @@ async function main() {
     wrapSelection: true,
   })
   formFields.add(tripTypeSelect)
+
+  // Departure date
+  const departLabel = new TextRenderable(renderer, { content: "Date:", fg: colors.text })
+  formFields.add(departLabel)
+  const departInput = new InputRenderable(renderer, {
+    width: "100%",
+    height: 1,
+    value: state.departDate,
+    placeholder: "YYYY-MM-DD",
+    backgroundColor: colors.bg,
+    textColor: colors.text,
+    focusedBackgroundColor: colors.primaryDark,
+    focusedTextColor: colors.text,
+    maxLength: 10,
+  })
+  formFields.add(departInput)
+
+  // Return date (only shown for round-trip)
+  const returnLabel = new TextRenderable(renderer, { content: "Return:", fg: colors.text })
+  const returnInput = new InputRenderable(renderer, {
+    width: "100%",
+    height: 1,
+    value: state.returnDate,
+    placeholder: "YYYY-MM-DD",
+    backgroundColor: colors.bg,
+    textColor: colors.text,
+    focusedBackgroundColor: colors.primaryDark,
+    focusedTextColor: colors.text,
+    maxLength: 10,
+  })
+
+  // Function to update return date visibility
+  const updateReturnDateVisibility = () => {
+    const children = formFields.getChildren()
+    const returnLabelIndex = children.findIndex(c => c.id === returnLabel.id)
+    const isCurrentlyVisible = returnLabelIndex !== -1
+    
+    if (state.tripType === "round-trip" && !isCurrentlyVisible) {
+      // Sync return input value with state before showing it
+      returnInput.value = state.returnDate || returnInput.value
+      
+      // Add return date fields right after departure date input
+      const departInputIndex = children.findIndex(c => c.id === departInput.id)
+      if (departInputIndex !== -1) {
+        // Remove all elements after departure date input, add return date, then re-add the rest
+        const elementsAfterDepartDate: any[] = []
+        for (let i = departInputIndex + 1; i < children.length; i++) {
+          const child = children[i]
+          elementsAfterDepartDate.push(child)
+          formFields.remove(child.id)
+        }
+        // Add return date fields
+        formFields.add(returnLabel)
+        formFields.add(returnInput)
+        // Re-add the elements that were after departure date
+        elementsAfterDepartDate.forEach(el => formFields.add(el))
+      } else {
+        // Fallback: just add at the end
+        formFields.add(returnLabel)
+        formFields.add(returnInput)
+      }
+      // Adjust focus if needed
+      const focusableElements = getFocusableElements()
+      if (currentFocusIndex >= focusableElements.length) {
+        currentFocusIndex = Math.max(0, focusableElements.length - 1)
+      }
+    } else if (state.tripType !== "round-trip" && isCurrentlyVisible) {
+      // Remove return date fields
+      formFields.remove(returnLabel.id)
+      formFields.remove(returnInput.id)
+      // Adjust focus if we were on return input
+      const focusableElements = getFocusableElements()
+      if (currentFocusIndex >= focusableElements.length) {
+        currentFocusIndex = Math.max(0, focusableElements.length - 1)
+        focusableElements[currentFocusIndex].focus()
+      }
+    }
+    renderer.requestRender()
+  }
+
+  // Initialize visibility based on current trip type
+  if (state.tripType === "round-trip") {
+    // Insert right after departure date input
+    const children = formFields.getChildren()
+    const departInputIndex = children.findIndex(c => c.id === departInput.id)
+    if (departInputIndex !== -1) {
+      const elementsAfterDepartDate: any[] = []
+      for (let i = departInputIndex + 1; i < children.length; i++) {
+        const child = children[i]
+        elementsAfterDepartDate.push(child)
+        formFields.remove(child.id)
+      }
+      formFields.add(returnLabel)
+      formFields.add(returnInput)
+      elementsAfterDepartDate.forEach(el => formFields.add(el))
+    } else {
+      formFields.add(returnLabel)
+      formFields.add(returnInput)
+    }
+  }
 
   // Seat class selector
   const seatLabel = new TextRenderable(renderer, { content: "Class:", fg: colors.text })
@@ -653,9 +757,16 @@ async function main() {
     state.departDate = departInput.value
   })
 
+  returnInput.on(InputRenderableEvents.CHANGE, () => {
+    state.returnDate = returnInput.value
+  })
+
   tripTypeSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => {
     const selected = tripTypeSelect.getSelectedOption()
-    if (selected) state.tripType = selected.value as TripType
+    if (selected) {
+      state.tripType = selected.value as TripType
+      updateReturnDateVisibility()
+    }
   })
 
   seatSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => {
@@ -663,12 +774,21 @@ async function main() {
     if (selected) state.seatClass = selected.value as SeatClass
   })
 
-  // Focusable elements list for Tab navigation
-  const focusableElements = [originInput, destInput, departInput, tripTypeSelect, seatSelect]
+  // Focusable elements list for Tab navigation (dynamically updated)
+  // Order matches visual order: From -> To -> Trip -> Date -> Return (if round-trip) -> Class
+  const getFocusableElements = () => {
+    const base = [originInput, destInput, tripTypeSelect, departInput]
+    if (state.tripType === "round-trip") {
+      base.push(returnInput)
+    }
+    base.push(seatSelect)
+    return base
+  }
   let currentFocusIndex = 0
 
   const focusNext = () => {
     tableState.inTableMode = false
+    const focusableElements = getFocusableElements()
     currentFocusIndex = (currentFocusIndex + 1) % focusableElements.length
     focusableElements[currentFocusIndex].focus()
     renderer.requestRender()
@@ -676,6 +796,7 @@ async function main() {
 
   const focusPrev = () => {
     tableState.inTableMode = false
+    const focusableElements = getFocusableElements()
     currentFocusIndex = (currentFocusIndex - 1 + focusableElements.length) % focusableElements.length
     focusableElements[currentFocusIndex].focus()
     renderer.requestRender()
@@ -686,7 +807,7 @@ async function main() {
       tableState.inTableMode = true
       tableState.selectedRow = 0
       tableState.selectedCol = 0
-      focusableElements.forEach(el => el.blur())
+      getFocusableElements().forEach(el => el.blur())
       renderTable()
       statusText.content = `📋 Table mode\nEnter: open flight\nEsc: back to form`
       renderer.requestRender()
@@ -695,6 +816,7 @@ async function main() {
 
   const exitTableMode = () => {
     tableState.inTableMode = false
+    const focusableElements = getFocusableElements()
     focusableElements[currentFocusIndex].focus()
     renderTable()
     statusText.content = `✅ ${state.results.length} flights\nR: results | Enter: search`
@@ -705,9 +827,30 @@ async function main() {
   const performSearch = async () => {
     if (state.isSearching) return
     
+    // Read all values directly from inputs/selects to ensure they're up-to-date
     state.origin = originInput.value.toUpperCase() || "JFK"
     state.destination = destInput.value.toUpperCase() || "LHR"
     state.departDate = departInput.value || "2025-12-25"
+    
+    // Update trip type from select FIRST, before checking return date
+    const selectedTripType = tripTypeSelect.getSelectedOption()
+    if (selectedTripType) {
+      state.tripType = selectedTripType.value as TripType
+    }
+    
+    // Update seat class from select
+    const selectedSeatClass = seatSelect.getSelectedOption()
+    if (selectedSeatClass) {
+      state.seatClass = selectedSeatClass.value as SeatClass
+    }
+    
+    // Update return date if round-trip - always read from input
+    // The input object exists even if not visible, so we can always read its value
+    if (state.tripType === "round-trip") {
+      // Always read from the input object (it exists even when not in the form)
+      // Use the input value, or fall back to state if input is empty
+      state.returnDate = returnInput.value || state.returnDate || "2026-01-30"
+    }
     
     state.isSearching = true
     statusText.content = "🔍 Searching..."
@@ -728,7 +871,23 @@ async function main() {
       )
     })
 
-    const exit = await Effect.runPromiseExit(program.pipe(Effect.provide(ScraperProtobufLive)))
+    const exit = await Effect.runPromiseExit(
+      program.pipe(
+        Effect.provide(AppLive),
+        Effect.tapErrorCause((cause) => 
+          Effect.sync(() => {
+            clearChildren(resultsContainer)
+            const errorText = new TextRenderable(renderer, {
+              content: `❌ Error: ${cause}`,
+              fg: colors.error,
+            })
+            resultsContainer.add(errorText)
+            statusText.content = "Search failed"
+            renderer.requestRender()
+          })
+        )
+      )
+    )
     state.isSearching = false
 
     if (Exit.isSuccess(exit)) {
@@ -738,16 +897,8 @@ async function main() {
       tableState.selectedCol = 0
       renderTable()
       statusText.content = `✅ ${state.results.length} flights\nR: results | Enter: search`
-    } else {
-      clearChildren(resultsContainer)
-      const errorText = new TextRenderable(renderer, {
-        content: `❌ Error: ${String(exit.cause)}`,
-        fg: colors.error,
-      })
-      resultsContainer.add(errorText)
-      statusText.content = "Search failed"
+      renderer.requestRender()
     }
-    renderer.requestRender()
   }
 
   // Handle keyboard navigation
@@ -874,8 +1025,6 @@ async function main() {
     return false
   })
 
-  focusableElements[0].focus()
+  getFocusableElements()[0].focus()
   renderer.start()
 }
-
-main().catch(console.error)

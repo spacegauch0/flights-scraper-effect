@@ -3,158 +3,62 @@
  * Inspired by: https://github.com/AWeirdDev/flights
  */
 
-import { Effect, Layer, Console } from "effect"
+import { Effect, Layer, Console, Context } from "effect"
+import { HttpClient } from "@effect/platform"
 import { FlightOption, ScraperError, Result, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
 import { ScraperService } from "./scraper"
 import { encodeFlightSearch, FlightData as ProtobufFlightData } from "../utils/protobuf"
 import * as cheerio from "cheerio"
 
 /**
- * Fetches the Google Flights HTML via HTTP (no browser needed!)
+ * Fetches the Google Flights HTML via HTTP using Effect Platform HttpClient
  */
-const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Connection": "keep-alive",
-          "Upgrade-Insecure-Requests": "1",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Cache-Control": "max-age=0"
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    
+    const response = yield* client.get(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Cache-Control": "max-age=0"
       }
+    }).pipe(
+      Effect.mapError((error) => 
+        new ScraperError({ 
+          reason: "NavigationFailed", 
+          message: `Failed to fetch ${url}: ${String(error)}` 
+        })
+      )
+    )
 
-      return await response.text()
-    },
-    catch: (e) => new ScraperError({ reason: "NavigationFailed", message: String(e) })
+    const body = yield* response.text.pipe(
+      Effect.mapError((error) => 
+        new ScraperError({ 
+          reason: "NavigationFailed", 
+          message: `Failed to read response body: ${String(error)}` 
+        })
+      )
+    )
+
+    return body
   })
 
 /**
- * Extracts JavaScript data from Google Flights HTML
- * Google embeds flight data in a script tag that we can parse directly
+ * Extracts flight data from Google Flights HTML
+ * Uses HTML parsing as the primary method (more reliable than JavaScript data extraction)
  */
 const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError> =>
   Effect.try({
-    try: () => {
-      const $ = cheerio.load(html)
-      
-      // Find the script tag containing flight data (script.ds\:1)
-      const scripts = $('script')
-      let flightData: any = null
-      
-      scripts.each((_, el) => {
-        const scriptContent = $(el).html() || ""
-        // Look for the data array pattern from Python: data:(\[.*\])
-        const match = scriptContent.match(/data:(\[.*?\](?:\s*,\s*\{[^}]*\})*)/s)
-        if (match) {
-          try {
-            // Extract just the array part
-            const dataStr = match[1].replace(/\n/g, ' ').trim()
-            flightData = JSON.parse(dataStr)
-            return false // break the loop
-          } catch (e) {
-            // Continue searching
-          }
-        }
-      })
-
-      // Always use HTML fallback for more reliable parsing
-      // The JavaScript data structure is too complex and unreliable
-      return parseHtmlFallback(html)
-
-      const flights: FlightOption[] = []
-      
-      // Parse the nested data structure
-      // Based on decoder.py structure: [2][0] for best flights, [3][0] for other flights
-      const bestFlights = flightData[2]?.[0] || []
-      const otherFlights = flightData[3]?.[0] || []
-      
-      const parseFlightItinerary = (itinerary: any, is_best: boolean) => {
-        if (!itinerary || !Array.isArray(itinerary[0])) return
-        
-        const info = itinerary[0]
-        
-        // Extract airline name - typically first short string in info[1]
-        let airlineName = "Unknown"
-        const airlineData = info[1]
-        if (airlineData) {
-          if (typeof airlineData === 'string') {
-            airlineName = airlineData
-          } else if (Array.isArray(airlineData) && airlineData.length > 0) {
-            // Get only short strings that look like airline names (< 30 chars, no special markers)
-            const validNames = airlineData
-              .filter((item: any) => 
-                typeof item === 'string' && 
-                item.length > 0 && 
-                item.length < 30 &&
-                !item.includes('Airport') &&
-                !item.includes('CO2') &&
-                !item.includes('stop') &&
-                !item.includes('min') &&
-                !item.includes('hr')
-              )
-            if (validNames.length > 0) {
-              // Take only first 3 airline names max
-              airlineName = validNames.slice(0, 3).join(", ")
-            } else if (typeof airlineData[0] === 'string') {
-              // Fallback to first item
-              airlineName = airlineData[0]
-            }
-          }
-        }
-        
-        const departureTime = info[5] ? `${info[5][0]}:${String(info[5][1]).padStart(2, '0')}` : ""
-        const arrivalTime = info[8] ? `${info[8][0]}:${String(info[8][1]).padStart(2, '0')}` : ""
-        const travelTime = info[9] || 0
-        const hours = Math.floor(travelTime / 60)
-        const minutes = travelTime % 60
-        const duration = `${hours} hr ${minutes} min`
-        const layovers = info[13] || []
-        const stops = layovers.length
-        
-        // Price extraction from itinerary summary
-        const price = "N/A" // Will be extracted from HTML as fallback
-        
-        flights.push(new FlightOption({
-          is_best,
-          name: airlineName,
-          departure: departureTime,
-          arrival: arrivalTime,
-          arrival_time_ahead: undefined,
-          duration,
-          stops,
-          delay: undefined,
-          price,
-          deep_link: undefined // Not available from JS data, only from HTML
-        }))
-      }
-      
-      bestFlights.forEach((itinerary: any) => parseFlightItinerary(itinerary, true))
-      otherFlights.forEach((itinerary: any) => parseFlightItinerary(itinerary, false))
-      
-      // Extract price indicator
-      const priceIndicatorText = $("span.gOatQ").text().trim().toLowerCase()
-      let current_price: "low" | "typical" | "high" | undefined = undefined
-      if (priceIndicatorText.includes("low")) current_price = "low"
-      else if (priceIndicatorText.includes("typical")) current_price = "typical"
-      else if (priceIndicatorText.includes("high")) current_price = "high"
-      
-      return new Result({
-        current_price,
-        flights
-      })
-    },
-    catch: (e) => new ScraperError({ reason: "ParsingError", message: String(e) })
+    try: () => parseHtmlFallback(html),
+    catch: (e) => new ScraperError({ reason: "ParsingError", message: `Failed to parse HTML: ${String(e)}` })
   })
 
 /**
@@ -369,16 +273,20 @@ const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters)
 
 /**
  * Creates the ScraperService implementation using Protobuf encoding
+ * Requires HttpClient to be provided via Layer
  */
-export const ScraperProtobufLive = Layer.effect(
+export const ScraperProtobufLive: Layer.Layer<ScraperService, never, HttpClient.HttpClient> = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
+    // HttpClient is available from Layer context
+    const httpClient = yield* HttpClient.HttpClient
+    
     return ScraperService.of({
       scrape: (from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency) =>
         Effect.gen(function* () {
-          // Validate input (using yieldable error pattern)
+          // Validate input
           if (tripType === "round-trip" && !returnDate) {
-            return yield* new ScraperError({ reason: "InvalidInput", message: "Return date is required for round-trip flights." })
+            return yield* Effect.fail(new ScraperError({ reason: "InvalidInput", message: "Return date is required for round-trip flights." }))
           }
 
           // Default values
@@ -418,8 +326,10 @@ export const ScraperProtobufLive = Layer.effect(
 
           yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
-          // Fetch HTML
-          const html = yield* fetchFlightsHtml(url)
+          // Fetch HTML - provide HttpClient from Layer context
+          const html = yield* fetchFlightsHtml(url).pipe(
+            Effect.provide(Layer.succeed(HttpClient.HttpClient, httpClient))
+          )
           yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
 
           // Parse HTML (try JavaScript data first, fallback to HTML)

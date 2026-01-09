@@ -3,6 +3,7 @@
  */
 
 import { Effect, Layer, Console } from "effect"
+import { HttpClient } from "@effect/platform"
 import { ScraperService } from "./scraper"
 import { FlightOption, ScraperError, ScraperErrors, Result, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
 import { encodeFlightSearch, FlightData as ProtobufFlightData } from "../utils/protobuf"
@@ -12,128 +13,54 @@ import { withRetryAndLog } from "../utils/retry"
 import * as cheerio from "cheerio"
 
 /**
- * Fetches the Google Flights HTML via HTTP with retry logic
+ * Fetches the Google Flights HTML via HTTP with retry logic using Effect Platform HttpClient
+ * Requires RateLimiterService and HttpClient in context
  */
-const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, RateLimiterService> =>
+const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, RateLimiterService | HttpClient.HttpClient> =>
   Effect.gen(function* () {
     // Acquire rate limit token
     const rateLimiter = yield* RateLimiterService
     yield* rateLimiter.acquire()
 
-    // Fetch with retry
+    // Fetch with retry using Effect Platform HttpClient
     return yield* withRetryAndLog(
-      Effect.tryPromise({
-        try: async () => {
-          const response = await fetch(url, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              "Accept-Language": "en-US,en;q=0.5",
-              "Accept-Encoding": "gzip, deflate, br",
-              "Connection": "keep-alive",
-              "Upgrade-Insecure-Requests": "1",
-              "Sec-Fetch-Dest": "document",
-              "Sec-Fetch-Mode": "navigate",
-              "Sec-Fetch-Site": "none",
-              "Cache-Control": "max-age=0"
-            }
-          })
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient
+        
+        const response = yield* client.get(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0"
           }
+        }).pipe(
+          Effect.mapError((error) => ScraperErrors.navigationFailed(url, String(error)))
+        )
 
-          return await response.text()
-        },
-        catch: (e) => ScraperErrors.navigationFailed(url, String(e))
+        const body = yield* response.text.pipe(
+          Effect.mapError((error) => ScraperErrors.navigationFailed(url, `Failed to read response: ${String(error)}`))
+        )
+
+        return body
       }),
       "Fetch Google Flights HTML"
     )
   })
 
 /**
- * Extracts JavaScript data from Google Flights HTML
+ * Extracts flight data from Google Flights HTML
+ * Uses HTML parsing as the primary method (more reliable than JavaScript data extraction)
  */
 const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError> =>
   Effect.try({
-    try: () => {
-      const $ = cheerio.load(html)
-      
-      // Find the script tag containing flight data
-      const scripts = $('script')
-      let flightData: any = null
-      
-      scripts.each((_, el) => {
-        const scriptContent = $(el).html() || ""
-        // Look for the data array pattern
-        const match = scriptContent.match(/data:(\[.*?\](?:\s*,\s*\{[^}]*\})*)/s)
-        if (match) {
-          try {
-            const dataStr = match[1].replace(/\n/g, ' ').trim()
-            flightData = JSON.parse(dataStr)
-            return false // break
-          } catch (e) {
-            // Continue searching
-          }
-        }
-      })
-
-      if (!flightData || !Array.isArray(flightData)) {
-        return parseHtmlFallback(html)
-      }
-
-      const flights: FlightOption[] = []
-      
-      // Parse the nested data structure
-      const bestFlights = flightData[2]?.[0] || []
-      const otherFlights = flightData[3]?.[0] || []
-      
-      const parseFlightItinerary = (itinerary: any, is_best: boolean) => {
-        if (!itinerary || !Array.isArray(itinerary[0])) return
-        
-        const info = itinerary[0]
-        const airlineName = info[1]?.[0] || "Unknown"
-        const departureTime = info[5] ? `${info[5][0]}:${String(info[5][1]).padStart(2, '0')}` : ""
-        const arrivalTime = info[8] ? `${info[8][0]}:${String(info[8][1]).padStart(2, '0')}` : ""
-        const travelTime = info[9] || 0
-        const hours = Math.floor(travelTime / 60)
-        const minutes = travelTime % 60
-        const duration = `${hours} hr ${minutes} min`
-        const layovers = info[13] || []
-        const stops = layovers.length
-        
-        // Price extraction
-        const price = "N/A"
-        
-        flights.push(new FlightOption({
-          is_best,
-          name: airlineName,
-          departure: departureTime,
-          arrival: arrivalTime,
-          arrival_time_ahead: undefined,
-          duration,
-          stops,
-          delay: undefined,
-          price,
-          deep_link: undefined // Not available from JS data, only from HTML
-        }))
-      }
-      
-      bestFlights.forEach((itinerary: any) => parseFlightItinerary(itinerary, true))
-      otherFlights.forEach((itinerary: any) => parseFlightItinerary(itinerary, false))
-      
-      // Extract price indicator
-      const priceIndicatorText = $("span.gOatQ").text().trim().toLowerCase()
-      let current_price: "low" | "typical" | "high" | undefined = undefined
-      if (priceIndicatorText.includes("low")) current_price = "low"
-      else if (priceIndicatorText.includes("typical")) current_price = "typical"
-      else if (priceIndicatorText.includes("high")) current_price = "high"
-      
-      return new Result({
-        current_price,
-        flights
-      })
-    },
+    try: () => parseHtmlFallback(html),
     catch: (e) => ScraperErrors.parsingError(String(e))
   })
 
@@ -293,19 +220,21 @@ const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters)
 
 /**
  * Production-ready scraper implementation with caching, rate limiting, and retry
+ * Requires CacheService, RateLimiterService, and HttpClient to be provided via Layer
  */
-export const ScraperProductionLive = Layer.effect(
+export const ScraperProductionLive: Layer.Layer<ScraperService, never, CacheService | RateLimiterService | HttpClient.HttpClient> = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
     const cache = yield* CacheService
     const rateLimiter = yield* RateLimiterService
+    const httpClient = yield* HttpClient.HttpClient
 
     return ScraperService.of({
       scrape: (from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency) =>
         Effect.gen(function* () {
-          // Validate input (using yieldable error pattern)
+          // Validate input
           if (tripType === "round-trip" && !returnDate) {
-            return yield* ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights")
+            return yield* Effect.fail(ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights"))
           }
 
           // Defaults
@@ -336,6 +265,8 @@ export const ScraperProductionLive = Layer.effect(
 
             return new Result({ current_price: cached.current_price, flights: limitedFlights })
           }
+          
+          yield* Console.log("🔍 Cache miss, fetching from Google Flights")
 
           // Build flight data
           const flightData: ProtobufFlightData[] = [{
@@ -366,20 +297,26 @@ export const ScraperProductionLive = Layer.effect(
 
           yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
-          // Fetch HTML (with rate limiting and retry)
-          const html = yield* fetchFlightsHtml(url).pipe(Effect.provide(Layer.succeed(RateLimiterService, rateLimiter)))
-          yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
+          // Fetch HTML - provide RateLimiterService and HttpClient from Layer context
+          const html = yield* fetchFlightsHtml(url).pipe(
+            Effect.provide(Layer.succeed(RateLimiterService, rateLimiter)),
+            Effect.provide(Layer.succeed(HttpClient.HttpClient, httpClient)),
+            Effect.tap((html) => Console.log(`📄 Received ${html.length} bytes of HTML`))
+          )
 
           // Parse HTML
-          const result = yield* extractJavaScriptData(html)
-          yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
+          const result = yield* extractJavaScriptData(html).pipe(
+            Effect.tap((r) => Console.log(`✈️  Extracted ${r.flights.length} raw flight entries`))
+          )
 
           if (result.current_price) {
             yield* Console.log(`💰 Price indicator: ${result.current_price}`)
           }
 
           // Cache the raw results
-          yield* cache.set(cacheKey, result)
+          yield* cache.set(cacheKey, result).pipe(
+            Effect.tap(() => Console.log("💾 Cached search results"))
+          )
 
           // Apply filters and sorting
           const filteredFlights = filterFlights(result.flights, filters)

@@ -5,9 +5,10 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun run main.ts",
-    "start:production": "bun run main-production.ts",
-    "tui": "bun run tui.ts"
+    "start": "bun run src/cli.ts",
+    "cli": "bun run src/cli.ts",
+    "tui": "bun run src/cli.ts --tui",
+    "production": "bun run src/cli.ts --production"
   },
   "dependencies": {
     "@effect/platform": "^0.94.1",

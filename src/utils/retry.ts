@@ -2,7 +2,7 @@
  * Retry logic with exponential backoff for Effect operations
  */
 
-import { Effect, Schedule, Duration } from "effect"
+import { Effect, Schedule, Duration, Console } from "effect"
 import { ScraperError } from "../domain"
 
 /**
@@ -70,7 +70,9 @@ export const withRetry = <A, E extends ScraperError, R>(
   return effect.pipe(
     Effect.retry({
       schedule: policy,
-      while: (error: E) => isRetryableError(error)
+      while: (error: unknown): error is E => {
+        return error instanceof ScraperError && isRetryableError(error)
+      }
     })
   )
 }
@@ -86,15 +88,17 @@ export const withRetryAndLog = <A, E extends ScraperError, R>(
   const policy = createRetrySchedule(config)
   
   return effect.pipe(
-    Effect.tapError((error) =>
-      Effect.logWarning(`${operationName} failed: ${error.message}. Retrying...`)
+    Effect.tapError((error: E) =>
+      Effect.log(`⚠️  ${operationName} failed: ${error.message}. Retrying...`)
     ),
     Effect.retry({
       schedule: policy,
-      while: (error: E) => isRetryableError(error)
+      while: (error: unknown): error is E => {
+        return error instanceof ScraperError && isRetryableError(error)
+      }
     }),
-    Effect.tapError((error) =>
-      Effect.logError(`${operationName} failed after all retries: ${error.message}`)
+    Effect.tapError((error: E) =>
+      Effect.log(`❌ ${operationName} failed after all retries: ${error.message}`)
     )
   )
 }

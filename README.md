@@ -37,6 +37,22 @@ npm install
 
 ## 🎯 Quick Start
 
+### Using the CLI
+
+The easiest way to get started is using the command-line interface:
+
+```bash
+# Launch interactive TUI
+bun run start
+
+# Or use CLI directly
+bun run cli --from JFK --to LHR --depart-date 2026-01-19
+```
+
+### Using as a Library
+
+You can also use the scraper as a library in your own code:
+
 ```typescript
 import { Effect } from "effect"
 import { ScraperService, ScraperProtobufLive } from "./src"
@@ -47,7 +63,7 @@ const program = Effect.gen(function* (_) {
   const result = yield* _(scraper.scrape(
     "JFK",              // From
     "LHR",              // To
-    "2025-12-25",       // Depart date
+    "2026-01-19",       // Depart date
     "one-way",          // Trip type
     undefined,          // Return date (for round-trip)
     "price-asc",        // Sort by price ascending
@@ -69,9 +85,14 @@ Effect.runPromise(program.pipe(Effect.provide(ScraperProtobufLive)))
 ```
 flights-scraper-effect/
 ├── src/
+│   ├── cli/              # Command-line interface
+│   │   └── index.ts      # CLI implementation with argument parsing
+│   ├── tui/              # Terminal User Interface
+│   │   └── index.ts      # Interactive TUI implementation
 │   ├── domain/           # Types, schemas, and errors
 │   │   ├── types.ts      # FlightOption, Result, filters, etc.
 │   │   ├── errors.ts     # ScraperError and error helpers
+│   │   ├── validation.ts # Validation utilities
 │   │   └── index.ts
 │   ├── services/         # Service interface and implementations
 │   │   ├── scraper.ts    # Service interface definition
@@ -84,15 +105,14 @@ flights-scraper-effect/
 │   │   ├── retry.ts      # Retry with exponential backoff
 │   │   ├── protobuf.ts   # Protocol buffer encoding
 │   │   └── index.ts
-│   └── index.ts          # Main exports
+│   ├── cli.ts            # Main entry point (routes to CLI or TUI)
+│   └── index.ts          # Library exports
 ├── docs/                 # Documentation
 │   ├── MIGRATION.md      # Puppeteer → Protobuf migration
 │   ├── PRODUCTION.md     # Production features guide
 │   ├── IMPLEMENTATION_STATUS.md  # Feature comparison
+│   ├── EFFECT_BEST_PRACTICES.md  # Effect best practices guide
 │   └── SUMMARY.md        # Implementation summary
-├── main.ts               # Basic entry point
-├── main-production.ts    # Production entry point
-├── tui.ts                # Interactive Terminal UI
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -165,16 +185,73 @@ flights-scraper-effect/
 
 ## 🧪 Running
 
+### Terminal User Interface (TUI)
+
+Launch the interactive TUI (default when no arguments provided):
+
 ```bash
-# Basic mode (no production features)
 bun run start
+# or
+bun run tui
+# or explicitly
+bun run src/cli.ts --tui
+```
+
+### Command-Line Interface (CLI)
+
+Use the CLI for programmatic access and automation:
+
+```bash
+# Basic CLI usage
+bun run cli --from JFK --to LHR --depart-date 2026-01-19
 
 # Production mode (with caching, rate limiting, retry)
-bun run start:production
+bun run production --from LAX --to NRT --depart-date 2026-01-19
 
-# Interactive Terminal UI (TUI)
-bun run tui
+# JSON output
+bun run cli --from AEP --to SCL --depart-date 2026-01-19 --json
+
+# Full example with filters
+bun run cli \
+  --from JFK \
+  --to LHR \
+  --depart-date 2026-01-19 \
+  --return-date 2026-01-26 \
+  --trip-type round-trip \
+  --seat business \
+  --adults 2 \
+  --max-stops 1 \
+  --limit 20 \
+  --currency USD
 ```
+
+### CLI Options
+
+**Required:**
+- `--from, -f <code>` - Origin airport code (e.g., JFK)
+- `--to, -t <code>` - Destination airport code (e.g., LHR)
+- `--depart-date, -d <date>` - Departure date (YYYY-MM-DD)
+
+**Optional:**
+- `--return-date, -r <date>` - Return date for round-trip (YYYY-MM-DD)
+- `--trip-type <type>` - Trip type: `one-way`, `round-trip`, `multi-city` (default: `one-way`)
+- `--sort, -s <option>` - Sort: `price-asc`, `price-desc`, `duration-asc`, `duration-desc`, `airline`, `none` (default: `price-asc`)
+- `--seat <class>` - Seat class: `economy`, `premium-economy`, `business`, `first` (default: `economy`)
+- `--adults, -a <number>` - Number of adults (default: 1)
+- `--children, -c <number>` - Number of children (default: 0)
+- `--infants-in-seat <number>` - Infants in seat (default: 0)
+- `--infants-on-lap <number>` - Infants on lap (default: 0)
+- `--max-price <number>` - Maximum price filter
+- `--min-price <number>` - Minimum price filter
+- `--max-duration <minutes>` - Maximum duration in minutes
+- `--max-stops <0|1|2>` - Maximum number of stops (default: 2)
+- `--nonstop-only` - Only show nonstop flights
+- `--airlines <list>` - Comma-separated list of airlines
+- `--limit, -l <number|all>` - Limit number of results (default: 10)
+- `--currency <code>` - Currency code (e.g., USD, EUR)
+- `--production, -p` - Use production mode (caching, rate limiting, retry)
+- `--json, -j` - Output results as JSON
+- `--help, -h` - Show help message
 
 ## 🖥️ Terminal User Interface (TUI)
 
@@ -188,21 +265,27 @@ The project includes an interactive terminal UI built with [OpenTUI](https://git
 - Seat class selection (Economy, Premium Economy, Business, First)
 - Max stops filter
 - Real-time flight search results
+- Sortable table view with keyboard navigation
 - Color-coded price level indicators
 - Mouse support
+- Direct links to Google Flights booking pages
 
 **Controls:**
-- `Enter` - Search for flights
-- `Tab` - Navigate between fields
-- `↑/↓` - Navigate select options
-- `Ctrl+C` - Exit
+- `Enter` - Search for flights (form mode) / Open selected flight (table mode)
+- `Tab` / `Shift+Tab` - Navigate between form fields
+- `Ctrl+R` - Focus results table
+- `↑/↓` - Navigate table rows (table mode)
+- `←/→` - Navigate table columns (table mode)
+- `Space` - Sort by selected column (table mode)
+- `Esc` - Exit table mode, return to form
+- `Ctrl+C` - Exit application
 
 ## 📝 Example Configurations
 
 ### Business Class Round-trip for Family
 ```typescript
 const result = yield* _(scraper.scrape(
-  "LAX", "NRT", "2026-06-15", "round-trip", "2026-06-30",
+  "LAX", "NRT", "2026-01-19", "round-trip", "2026-01-26",
   "price-asc",
   { max_stops: 1, limit: 20 },
   "business",
@@ -214,7 +297,7 @@ const result = yield* _(scraper.scrape(
 ### Budget Economy with Filters
 ```typescript
 const result = yield* _(scraper.scrape(
-  "ORD", "CDG", "2026-03-10", "one-way", undefined,
+  "ORD", "CDG", "2026-01-19", "one-way", undefined,
   "price-asc",
   { 
     maxPrice: 500, 
@@ -230,7 +313,9 @@ const result = yield* _(scraper.scrape(
 
 ## 📚 Tech Stack
 
-- **[Effect](https://effect.website/)** - Functional programming for TypeScript
+- **[Effect](https://effect.website/)** - Functional programming for TypeScript with type-safe error handling
+- **[@effect/platform](https://effect.website/docs/platform)** - Platform abstractions (HTTP client)
+- **[@effect/schema](https://effect.website/docs/schema)** - Schema validation and type safety
 - **[protobufjs](https://github.com/protobufjs/protobuf.js/)** - Protocol Buffer encoding
 - **[Cheerio](https://cheerio.js.org/)** - HTML parsing
 - **[OpenTUI](https://github.com/sst/opentui)** - Terminal user interfaces
