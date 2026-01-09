@@ -16,7 +16,7 @@ import { Effect, Context, Layer, Exit, Schedule, Fiber } from "effect"
 import { exec } from "child_process"
 import { ScraperService } from "../services"
 import { encodeFlightSearch } from "../utils"
-import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "./domain"
+import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "../domain"
 import { TuiState, TuiStateService } from "./TuiState"
 
 /** Service for interacting with the Terminal User Interface */
@@ -100,6 +100,8 @@ export const TuiLive = Layer.effect(
       backgroundColor: colors.bgLight,
     })
     const formFields = new BoxRenderable(renderer, { width: "100%", flexDirection: "column", gap: 1 })
+    const { state } = tuiState  // Get mutable state reference
+    
     const originInput = new InputRenderable(renderer, {
       width: "100%",
       height: 1,
@@ -136,11 +138,13 @@ export const TuiLive = Layer.effect(
     const tripTypeSelect = new SelectRenderable(renderer, {
       width: "100%",
       height: 2,
+      showDescription: false,
+      itemSpacing: 0,
       options: [
-        { name: "One-way", value: "one-way" },
-        { name: "Round-trip", value: "round-trip" },
+        { name: "One-way", value: "one-way", description: "" },
+        { name: "Round-trip", value: "round-trip", description: "" },
       ],
-      backgroundColor: colors.bg,
+      backgroundColor: colors.bgLight,
       textColor: colors.text,
       selectedBackgroundColor: colors.primary,
       selectedTextColor: colors.bg,
@@ -148,13 +152,15 @@ export const TuiLive = Layer.effect(
     const seatSelect = new SelectRenderable(renderer, {
       width: "100%",
       height: 4,
+      showDescription: false,
+      itemSpacing: 0,
       options: [
-        { name: "Economy", value: "economy" },
-        { name: "Premium", value: "premium-economy" },
-        { name: "Business", value: "business" },
-        { name: "First", value: "first" },
+        { name: "Economy", value: "economy", description: "" },
+        { name: "Premium Economy", value: "premium-economy", description: "" },
+        { name: "Business", value: "business", description: "" },
+        { name: "First Class", value: "first", description: "" },
       ],
-      backgroundColor: colors.bg,
+      backgroundColor: colors.bgLight,
       textColor: colors.text,
       selectedBackgroundColor: colors.primary,
       selectedTextColor: colors.bg,
@@ -212,7 +218,7 @@ export const TuiLive = Layer.effect(
     let statusResetFiber: Fiber.RuntimeFiber<void, never> | null = null
 
     /** Sets a status message, optionally resetting it after a duration */
-    const setStatus = (message: string, duration?: number) =>
+    const setStatus = (message: string, duration?: number): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (statusResetFiber) {
           yield* Fiber.interrupt(statusResetFiber)
@@ -222,7 +228,7 @@ export const TuiLive = Layer.effect(
         yield* render()
 
         if (duration) {
-          const resetEffect = Effect.sleep(`${duration} seconds`).pipe(
+          const resetEffect: Effect.Effect<void> = Effect.sleep(`${duration} seconds`).pipe(
             Effect.flatMap(() => setStatus("Enter: search | Ctrl+R: results | Ctrl+C: exit")),
             Effect.interruptible,
           )
@@ -231,21 +237,15 @@ export const TuiLive = Layer.effect(
       })
 
     const setSearchResults = (results: FlightOption[], priceLevel?: "low" | "typical" | "high") =>
-      Effect.sync(() => {
-        state.results = results
+      Effect.gen(function* () {
+        state.results = [...results]
         state.priceLevel = priceLevel
         tableState.selectedRow = 0
         tableState.selectedCol = 0
         state.isSearching = false
-      }).pipe(
-        Effect.flatMap(() =>
-          setStatus(
-            `✅ ${state.results.length} flight${state.results.length !== 1 ? "s" : ""}` +
-              ` | R: results | Enter: search`,
-          ),
-        ),
-        Effect.flatMap(render),
-      )
+        state.statusMessage = `✅ ${results.length} flight${results.length !== 1 ? "s" : ""} | R: results | Enter: search`
+        yield* render()
+      })
 
     const setErrorMessage = (message: string) =>
       Effect.sync(() => {
@@ -264,15 +264,15 @@ export const TuiLive = Layer.effect(
     const render = () =>
       Effect.sync(() => {
         clearChildren(resultsContainer)
-        statusText.content = tuiState.state.statusMessage
+        statusText.content = state.statusMessage
 
-        if (tuiState.state.errorMessage) {
+        if (state.errorMessage) {
           resultsContainer.add(
-            new TextRenderable(renderer, { content: `❌ Error: ${tuiState.state.errorMessage}`, fg: colors.error }),
+            new TextRenderable(renderer, { content: `❌ Error: ${state.errorMessage}`, fg: colors.error }),
           )
-        } else if (tuiState.state.isSearching) {
+        } else if (state.isSearching) {
           resultsContainer.add(new TextRenderable(renderer, { content: "Loading...", fg: colors.textDim }))
-        } else if (tuiState.state.results.length === 0) {
+        } else if (state.results.length === 0) {
           resultsContainer.add(
             new TextRenderable(renderer, { content: "Press Enter to search for flights...", fg: colors.textDim }),
           )
@@ -284,16 +284,16 @@ export const TuiLive = Layer.effect(
 
     const renderTable = () => {
       // Price level indicator
-      if (tuiState.state.priceLevel) {
+      if (state.priceLevel) {
         const priceColor =
-          tuiState.state.priceLevel === "low"
+          state.priceLevel === "low"
             ? colors.success
-            : tuiState.state.priceLevel === "high"
+            : state.priceLevel === "high"
             ? colors.error
             : colors.warning
         resultsContainer.add(
           new TextRenderable(renderer, {
-            content: `💰 Prices are ${tuiState.state.priceLevel.toUpperCase()} for this route`,
+            content: `💰 Prices are ${state.priceLevel.toUpperCase()} for this route`,
             fg: priceColor,
           }),
         )
@@ -310,7 +310,7 @@ export const TuiLive = Layer.effect(
       })
       resultsContainer.add(tableBox)
 
-      const sortedFlights = sortFlights(tuiState.state.results, tableState.sortColumn, tableState.sortAsc)
+      const sortedFlights = sortFlights(state.results, tableState.sortColumn, tableState.sortAsc)
       const headerRow = new BoxRenderable(renderer, {
         width: "100%",
         height: 1,
@@ -406,32 +406,34 @@ export const TuiLive = Layer.effect(
     }
 
     const performSearch = Effect.gen(function* () {
-      if (tuiState.state.isSearching) {
+      if (state.isSearching) {
         return
       }
       yield* clearError()
-      tuiState.setIsSearching(true)
+      state.isSearching = true
       yield* setStatus("🔍 Searching...")
 
-      const filters: FlightFilters = { max_stops: tuiState.state.maxStops, limit: tuiState.state.limit }
+      const filters: FlightFilters = { max_stops: state.maxStops, limit: state.limit }
       const sortOption: SortOption = "none"
-      const returnDate = tuiState.state.tripType === "round-trip" ? tuiState.state.returnDate : undefined
+      const returnDate = state.tripType === "round-trip" ? state.returnDate : undefined
 
       const searchResult = yield* scraper.scrape(
-        tuiState.state.origin,
-        tuiState.state.destination,
-        tuiState.state.departDate,
-        tuiState.state.tripType,
+        state.origin,
+        state.destination,
+        state.departDate,
+        state.tripType,
         returnDate,
         sortOption,
         filters,
-        tuiState.state.seatClass,
-        tuiState.state.passengers,
+        state.seatClass,
+        state.passengers,
         "USD",
       )
-      yield* setSearchResults(searchResult.flights, searchResult.current_price)
+      yield* setSearchResults([...searchResult.flights], searchResult.current_price)
     }).pipe(
-      Effect.catchAll((error) => setErrorMessage(error.message))
+      Effect.catchAll((error: unknown) => 
+        setErrorMessage(error instanceof Error ? error.message : String(error))
+      )
     )
 
     const attachEventListeners = () =>
@@ -455,7 +457,7 @@ export const TuiLive = Layer.effect(
 
         const enterTableMode = () =>
           Effect.gen(function* () {
-            if (tuiState.state.results.length > 0) {
+            if (state.results.length > 0) {
               tableState.inTableMode = true
               tableState.selectedRow = 0
               tableState.selectedCol = 0
@@ -470,7 +472,7 @@ export const TuiLive = Layer.effect(
             tableState.inTableMode = false
             focusableElements[currentFocusIndex].focus()
             yield* render()
-            yield* setStatus(`✅ ${tuiState.state.results.length} flights | R: results | Enter: search`)
+            yield* setStatus(`✅ ${state.results.length} flights | R: results | Enter: search`)
           })
 
         // --- Event Listeners ---
@@ -486,7 +488,7 @@ export const TuiLive = Layer.effect(
           () => (state.seatClass = (seatSelect.getSelectedOption()?.value as SeatClass) ?? "economy"),
         )
 
-        renderer.keyInput.on("keypress", (_, event) => {
+        renderer.keyInput.on("keypress", (event) => {
           let handler = Effect.void
           if (tableState.inTableMode) {
             // Table navigation
@@ -496,7 +498,7 @@ export const TuiLive = Layer.effect(
                 handler = render()
                 break
               case "down":
-                tableState.selectedRow = Math.min(tuiState.state.results.length - 1, tableState.selectedRow + 1)
+                tableState.selectedRow = Math.min(state.results.length - 1, tableState.selectedRow + 1)
                 handler = render()
                 break
               case "left":
@@ -522,29 +524,30 @@ export const TuiLive = Layer.effect(
               }
               case "return":
               case "enter": {
-                const sortedFlights = sortFlights(tuiState.state.results, tableState.sortColumn, tableState.sortAsc)
+                const sortedFlights = sortFlights(state.results, tableState.sortColumn, tableState.sortAsc)
                 const selectedFlight = sortedFlights[tableState.selectedRow]
                 if (selectedFlight) {
-                  if (selectedFlight.deep_link) {
+                  const deepLink = selectedFlight.deep_link
+                  if (deepLink) {
                     handler = Effect.gen(function* () {
-                      yield* openInBrowser(selectedFlight.deep_link)
+                      yield* openInBrowser(deepLink)
                       yield* setStatus(`🌐 Opening flight...`, 2)
-                    })
+                    }).pipe(Effect.catchAll(() => setStatus(`❌ Failed to open URL`, 2)))
                   } else {
                     handler = Effect.gen(function* () {
                       yield* setStatus(`🌐 Building URL...`)
                       const url = yield* buildGoogleFlightsUrl(
-                        tuiState.state.origin,
-                        tuiState.state.destination,
-                        tuiState.state.departDate,
-                        tuiState.state.tripType,
-                        tuiState.state.returnDate,
-                        tuiState.state.seatClass,
-                        tuiState.state.passengers,
+                        state.origin,
+                        state.destination,
+                        state.departDate,
+                        state.tripType,
+                        state.returnDate,
+                        state.seatClass,
+                        state.passengers,
                       )
                       yield* openInBrowser(url)
                       yield* setStatus(`🌐 Opening search... (no direct link)`, 2)
-                    })
+                    }).pipe(Effect.catchAll(() => setStatus(`❌ Failed to open URL`, 2)))
                   }
                 }
                 break
@@ -624,7 +627,7 @@ const buildGoogleFlightsUrl = (
   tripType: TripType,
   returnDate?: string,
   seatClass: SeatClass = "economy",
-  passengers: Passengers = { adults: 1 },
+  passengers: Passengers = { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
   currency: string = "USD",
 ) =>
   Effect.gen(function* () {
