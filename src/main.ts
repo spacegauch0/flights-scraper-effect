@@ -13,15 +13,13 @@ const main = Effect.gen(function* () {
   const tui = yield* TUI
   // Render the initial UI
   yield* tui.render()
-  // Attach event listeners
-  yield* tui.attachEventListeners()
 })
 
 // Define the layers for the application
-const TuiLayer = TuiLive.pipe(
-  Layer.provide(ScraperProtobufLive),
-  Layer.provide(TuiStateService.Live)
-)
+const TuiLayer = TuiLive.pipe(Layer.provide(ScraperProtobufLive), Layer.provide(TuiStateService.Live))
+
+// Launch the application
+const runnable = main.pipe(Layer.launch, Effect.provide(TuiLayer))
 
 // Run the application
-BunRuntime.runMain(main.pipe(Effect.provide(TuiLayer)))
+BunRuntime.runMain(runnable)
