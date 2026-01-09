@@ -14,7 +14,8 @@ import {
 } from "@opentui/core"
 import { Effect, Context, Layer, Exit, Schedule, Fiber } from "effect"
 import { exec } from "child_process"
-import { ScraperService, encodeFlightSearch } from "./scraper"
+import { ScraperService } from "./services"
+import { encodeFlightSearch } from "./utils"
 import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "./domain"
 import { clear } from "console"
 

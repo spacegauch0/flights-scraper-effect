@@ -4,7 +4,7 @@
 import "reflect-metadata"
 import { Effect, Layer } from "effect"
 import { TuiLive, TUI } from "./tui"
-import { ScraperProtobufLive } from "./scraper"
+import { ScraperProtobufLive } from "./services"
 import { BunRuntime } from "@effect/platform-bun"
 
 // The main application effect
