@@ -72,14 +72,20 @@ export const TuiLive = Layer.effect(
       }),
     )
 
+    // Calculate default dates (2 weeks from now)
+    const today = new Date()
+    const defaultDepart = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
+    const defaultReturn = new Date(today.getTime() + 21 * 24 * 60 * 60 * 1000)
+    const formatDate = (d: Date) => d.toISOString().split("T")[0]
+    
     const state: TUIState = {
       origin: "JFK",
       destination: "LHR",
-      departDate: "2025-12-25",
-      returnDate: "2025-12-30",
+      departDate: formatDate(defaultDepart),
+      returnDate: formatDate(defaultReturn),
       tripType: "one-way",
       seatClass: "economy",
-      passengers: { adults: 1 },
+      passengers: { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
       maxStops: 2,
       limit: 10,
       isSearching: false,
@@ -166,14 +172,28 @@ export const TuiLive = Layer.effect(
       focusedTextColor: colors.text,
       maxLength: 10,
     })
+    const returnLabel = new TextRenderable(renderer, { content: "Return:", fg: colors.text })
+    const returnInput = new InputRenderable(renderer, {
+      width: "100%",
+      height: 1,
+      value: state.returnDate,
+      placeholder: "YYYY-MM-DD",
+      backgroundColor: colors.bg,
+      textColor: colors.text,
+      focusedBackgroundColor: colors.primaryDark,
+      focusedTextColor: colors.text,
+      maxLength: 10,
+    })
     const tripTypeSelect = new SelectRenderable(renderer, {
       width: "100%",
       height: 2,
+      showDescription: false,
+      itemSpacing: 0,
       options: [
-        { name: "One-way", value: "one-way" },
-        { name: "Round-trip", value: "round-trip" },
+        { name: "One-way", value: "one-way", description: "" },
+        { name: "Round-trip", value: "round-trip", description: "" },
       ],
-      backgroundColor: colors.bg,
+      backgroundColor: colors.bgLight,
       textColor: colors.text,
       selectedBackgroundColor: colors.primary,
       selectedTextColor: colors.bg,
@@ -181,13 +201,15 @@ export const TuiLive = Layer.effect(
     const seatSelect = new SelectRenderable(renderer, {
       width: "100%",
       height: 4,
+      showDescription: false,
+      itemSpacing: 0,
       options: [
-        { name: "Economy", value: "economy" },
-        { name: "Premium", value: "premium-economy" },
-        { name: "Business", value: "business" },
-        { name: "First", value: "first" },
+        { name: "Economy", value: "economy", description: "" },
+        { name: "Premium Economy", value: "premium-economy", description: "" },
+        { name: "Business", value: "business", description: "" },
+        { name: "First Class", value: "first", description: "" },
       ],
-      backgroundColor: colors.bg,
+      backgroundColor: colors.bgLight,
       textColor: colors.text,
       selectedBackgroundColor: colors.primary,
       selectedTextColor: colors.bg,
@@ -231,13 +253,25 @@ export const TuiLive = Layer.effect(
     formFields.add(originInput)
     formFields.add(new TextRenderable(renderer, { content: "To:", fg: colors.text }))
     formFields.add(destInput)
-    formFields.add(new TextRenderable(renderer, { content: "Date:", fg: colors.text }))
-    formFields.add(departInput)
     formFields.add(new TextRenderable(renderer, { content: "Trip:", fg: colors.text }))
     formFields.add(tripTypeSelect)
+    formFields.add(new TextRenderable(renderer, { content: "Depart:", fg: colors.text }))
+    formFields.add(departInput)
+    formFields.add(returnLabel)
+    formFields.add(returnInput)
     formFields.add(new TextRenderable(renderer, { content: "Class:", fg: colors.text }))
     formFields.add(seatSelect)
     formFields.add(statusBox)
+    
+    // Helper to show/hide return date fields based on trip type
+    const updateReturnDateVisibility = () => {
+      const isRoundTrip = state.tripType === "round-trip"
+      returnLabel.visible = isRoundTrip
+      returnInput.visible = isRoundTrip
+      renderer.requestRender()
+    }
+    // Initialize visibility
+    updateReturnDateVisibility()
     statusBox.add(statusText)
     contentRow.add(rightPanel)
     rightPanel.add(resultsContainer)
@@ -245,7 +279,7 @@ export const TuiLive = Layer.effect(
     let statusResetFiber: Fiber.RuntimeFiber<void, never> | null = null
 
     /** Sets a status message, optionally resetting it after a duration */
-    const setStatus = (message: string, duration?: number) =>
+    const setStatus = (message: string, duration?: number): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (statusResetFiber) {
           yield* Fiber.interrupt(statusResetFiber)
@@ -255,7 +289,7 @@ export const TuiLive = Layer.effect(
         yield* render()
 
         if (duration) {
-          const resetEffect = Effect.sleep(`${duration} seconds`).pipe(
+          const resetEffect: Effect.Effect<void> = Effect.sleep(`${duration} seconds`).pipe(
             Effect.flatMap(() => setStatus("Enter: search | Ctrl+R: results | Ctrl+C: exit")),
             Effect.interruptible,
           )
@@ -264,21 +298,15 @@ export const TuiLive = Layer.effect(
       })
 
     const setSearchResults = (results: FlightOption[], priceLevel?: "low" | "typical" | "high") =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         state.results = results
         state.priceLevel = priceLevel
         tableState.selectedRow = 0
         tableState.selectedCol = 0
         state.isSearching = false
-      }).pipe(
-        Effect.flatMap(() =>
-          setStatus(
-            `✅ ${state.results.length} flight${state.results.length !== 1 ? "s" : ""}` +
-              ` | R: results | Enter: search`,
-          ),
-        ),
-        Effect.flatMap(render),
-      )
+        state.statusMessage = `✅ ${results.length} flight${results.length !== 1 ? "s" : ""} | R: results | Enter: search`
+        yield* render()
+      })
 
     const setErrorMessage = (message: string) =>
       Effect.sync(() => {
@@ -456,27 +484,39 @@ export const TuiLive = Layer.effect(
         state.passengers,
         "USD",
       )
-      yield* setSearchResults(searchResult.flights, searchResult.current_price)
+      yield* setSearchResults([...searchResult.flights], searchResult.current_price)
     }).pipe(
-      Effect.catchAll((error) => setErrorMessage(error.message))
+      Effect.catchAll((error: unknown) => 
+        setErrorMessage(error instanceof Error ? error.message : String(error))
+      )
     )
 
     const attachEventListeners = () =>
       Effect.sync(() => {
-        const focusableElements = [originInput, destInput, departInput, tripTypeSelect, seatSelect]
+        // Dynamic list based on trip type
+        const getFocusableElements = () => {
+          const base = [originInput, destInput, tripTypeSelect, departInput]
+          if (state.tripType === "round-trip") {
+            base.push(returnInput)
+          }
+          base.push(seatSelect)
+          return base
+        }
         let currentFocusIndex = 0
 
         const focusNext = Effect.sync(() => {
           tableState.inTableMode = false
-          currentFocusIndex = (currentFocusIndex + 1) % focusableElements.length
-          focusableElements[currentFocusIndex].focus()
+          const elements = getFocusableElements()
+          currentFocusIndex = (currentFocusIndex + 1) % elements.length
+          elements[currentFocusIndex].focus()
           renderer.requestRender()
         })
 
         const focusPrev = Effect.sync(() => {
           tableState.inTableMode = false
-          currentFocusIndex = (currentFocusIndex - 1 + focusableElements.length) % focusableElements.length
-          focusableElements[currentFocusIndex].focus()
+          const elements = getFocusableElements()
+          currentFocusIndex = (currentFocusIndex - 1 + elements.length) % elements.length
+          elements[currentFocusIndex].focus()
           renderer.requestRender()
         })
 
@@ -486,7 +526,7 @@ export const TuiLive = Layer.effect(
               tableState.inTableMode = true
               tableState.selectedRow = 0
               tableState.selectedCol = 0
-              focusableElements.forEach(el => el.blur())
+              getFocusableElements().forEach(el => el.blur())
               yield* render()
               yield* setStatus("📋 Table mode | Enter: open flight | Esc: back to form")
             }
@@ -495,7 +535,9 @@ export const TuiLive = Layer.effect(
         const exitTableMode = () =>
           Effect.gen(function* () {
             tableState.inTableMode = false
-            focusableElements[currentFocusIndex].focus()
+            const elements = getFocusableElements()
+            if (currentFocusIndex >= elements.length) currentFocusIndex = 0
+            elements[currentFocusIndex].focus()
             yield* render()
             yield* setStatus(`✅ ${state.results.length} flights | R: results | Enter: search`)
           })
@@ -504,16 +546,20 @@ export const TuiLive = Layer.effect(
         originInput.on(InputRenderableEvents.CHANGE, () => (state.origin = originInput.value.toUpperCase()))
         destInput.on(InputRenderableEvents.CHANGE, () => (state.destination = destInput.value.toUpperCase()))
         departInput.on(InputRenderableEvents.CHANGE, () => (state.departDate = departInput.value))
+        returnInput.on(InputRenderableEvents.CHANGE, () => (state.returnDate = returnInput.value))
         tripTypeSelect.on(
           SelectRenderableEvents.SELECTION_CHANGED,
-          () => (state.tripType = (tripTypeSelect.getSelectedOption()?.value as TripType) ?? "one-way"),
+          () => {
+            state.tripType = (tripTypeSelect.getSelectedOption()?.value as TripType) ?? "one-way"
+            updateReturnDateVisibility()
+          },
         )
         seatSelect.on(
           SelectRenderableEvents.SELECTION_CHANGED,
           () => (state.seatClass = (seatSelect.getSelectedOption()?.value as SeatClass) ?? "economy"),
         )
 
-        renderer.keyInput.on("keypress", (_, event) => {
+        renderer.keyInput.on("keypress", (event) => {
           let handler = Effect.void
           if (tableState.inTableMode) {
             // Table navigation
@@ -552,11 +598,12 @@ export const TuiLive = Layer.effect(
                 const sortedFlights = sortFlights(state.results, tableState.sortColumn, tableState.sortAsc)
                 const selectedFlight = sortedFlights[tableState.selectedRow]
                 if (selectedFlight) {
-                  if (selectedFlight.deep_link) {
+                  const deepLink = selectedFlight.deep_link
+                  if (deepLink) {
                     handler = Effect.gen(function* () {
-                      yield* openInBrowser(selectedFlight.deep_link)
+                      yield* openInBrowser(deepLink)
                       yield* setStatus(`🌐 Opening flight...`, 2)
-                    })
+                    }).pipe(Effect.catchAll(() => setStatus(`❌ Failed to open URL`, 2)))
                   } else {
                     handler = Effect.gen(function* () {
                       yield* setStatus(`🌐 Building URL...`)
@@ -571,7 +618,7 @@ export const TuiLive = Layer.effect(
                       )
                       yield* openInBrowser(url)
                       yield* setStatus(`🌐 Opening search... (no direct link)`, 2)
-                    })
+                    }).pipe(Effect.catchAll(() => setStatus(`❌ Failed to open URL`, 2)))
                   }
                 }
                 break
@@ -615,7 +662,7 @@ export const TuiLive = Layer.effect(
           return false
         })
 
-        focusableElements[0].focus()
+        getFocusableElements()[0].focus()
         renderer.start()
       })
 
@@ -651,7 +698,7 @@ const buildGoogleFlightsUrl = (
   tripType: TripType,
   returnDate?: string,
   seatClass: SeatClass = "economy",
-  passengers: Passengers = { adults: 1 },
+  passengers: Passengers = { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
   currency: string = "USD",
 ) =>
   Effect.gen(function* () {

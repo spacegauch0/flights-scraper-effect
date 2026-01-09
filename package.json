@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@effect/platform": "^0.94.1",
-    "@effect/platform-bun": "^0.94.1",
+    "@effect/platform-bun": "^0.87.0",
     "@effect/schema": "^0.75.5",
     "@opentui/core": "^0.1.70",
     "cheerio": "^1.1.2",

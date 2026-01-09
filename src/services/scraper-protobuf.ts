@@ -418,12 +418,23 @@ export const ScraperProtobufLive = Layer.effect(
 
           yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
-          // Fetch HTML
-          const html = yield* fetchFlightsHtml(url)
+          // Fetch HTML with automatic retry if no flights found
+          // Google Flights sometimes returns minimal HTML on first request
+          let html = yield* fetchFlightsHtml(url)
           yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
 
-          // Parse HTML (try JavaScript data first, fallback to HTML)
-          const result = yield* extractJavaScriptData(html)
+          let result = yield* extractJavaScriptData(html)
+          
+          // If no flights found, retry once after a short delay
+          // This handles the cookie/session warm-up issue
+          if (result.flights.length === 0) {
+            yield* Console.log(`⏳ No flights found, retrying...`)
+            yield* Effect.sleep("1 second")
+            html = yield* fetchFlightsHtml(url)
+            yield* Console.log(`📄 Retry received ${html.length} bytes of HTML`)
+            result = yield* extractJavaScriptData(html)
+          }
+          
           yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
 
           if (result.current_price) {
