@@ -114,7 +114,8 @@ const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError
           duration,
           stops,
           delay: undefined,
-          price
+          price,
+          deep_link: undefined // Not available from JS data, only from HTML
         }))
       }
       
@@ -165,6 +166,42 @@ const parseHtmlFallback = (html: string): Result => {
     const nonstop = text.includes("Nonstop")
     const stops = nonstop ? 0 : 1
 
+    // Deep link - try to extract booking URL from the flight card
+    // Google Flights booking URLs look like: /travel/flights/booking?tfs=...&tfu=...&curr=...
+    let deep_link: string | undefined = undefined
+    
+    // Look for booking links specifically
+    const bookingLink = card.find('a[href*="/travel/flights/booking"], a[href*="tfs="]').first()
+    if (bookingLink.length) {
+      const href = bookingLink.attr('href')
+      if (href) {
+        deep_link = href.startsWith('http') ? href : `https://www.google.com${href}`
+      }
+    }
+    
+    // Try data attributes
+    if (!deep_link) {
+      const linkEl = card.find('a[data-tfs], a[data-url*="booking"]').first()
+      if (linkEl.length) {
+        const dataTfs = linkEl.attr('data-tfs')
+        if (dataTfs) {
+          deep_link = `https://www.google.com/travel/flights/booking?tfs=${encodeURIComponent(dataTfs)}&curr=USD`
+        }
+      }
+    }
+    
+    // Try jsdata attributes for tfs parameter
+    if (!deep_link) {
+      const jsDataEl = card.find('[jsdata*="tfs"]').first()
+      if (jsDataEl.length) {
+        const jsdata = jsDataEl.attr('jsdata') || ''
+        const tfsMatch = jsdata.match(/tfs=([^&\s;]+)/)
+        if (tfsMatch) {
+          deep_link = `https://www.google.com/travel/flights/booking?tfs=${tfsMatch[1]}&curr=USD`
+        }
+      }
+    }
+
     if (airline !== "Unknown") {
       flights.push(new FlightOption({
         is_best: index === 0,
@@ -175,7 +212,8 @@ const parseHtmlFallback = (html: string): Result => {
         duration,
         stops,
         delay: undefined,
-        price
+        price,
+        deep_link
       }))
     }
   })

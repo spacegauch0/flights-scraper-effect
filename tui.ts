@@ -13,8 +13,63 @@ import {
   InputRenderableEvents,
 } from "@opentui/core"
 import { Effect, Exit } from "effect"
-import { ScraperService, ScraperProtobufLive } from "./src"
+import { exec } from "child_process"
+import { ScraperService, ScraperProtobufLive, encodeFlightSearch } from "./src"
 import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "./src/domain"
+
+/** Opens a URL in the default browser */
+function openInBrowser(url: string): void {
+  // Use 'open' on macOS, 'xdg-open' on Linux, 'start' on Windows
+  const platform = process.platform
+  const command = platform === "darwin" ? "open" 
+    : platform === "win32" ? "start" 
+    : "xdg-open"
+  exec(`${command} "${url}"`)
+}
+
+/** Builds Google Flights search URL using protobuf encoding (same as scraper) */
+async function buildGoogleFlightsUrl(
+  origin: string,
+  destination: string,
+  departDate: string,
+  tripType: TripType,
+  returnDate?: string,
+  seatClass: SeatClass = "economy",
+  passengers: Passengers = { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
+  currency: string = "USD"
+): Promise<string> {
+  // Build flight data for protobuf encoding
+  const flightData = [{
+    date: departDate,
+    from_airport: origin,
+    to_airport: destination
+  }]
+  
+  if (tripType === "round-trip" && returnDate) {
+    flightData.push({
+      date: returnDate,
+      from_airport: destination,
+      to_airport: origin
+    })
+  }
+  
+  // Try to encode using protobuf (same as scraper)
+  const result = await Effect.runPromiseExit(encodeFlightSearch(flightData, tripType, seatClass, passengers))
+  
+  if (Exit.isSuccess(result)) {
+    const tfs = result.value
+    const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
+    if (currency) params.set("curr", currency)
+    return `https://www.google.com/travel/flights?${params.toString()}`
+  }
+  
+  // Fallback to simple query URL if encoding fails
+  let searchQuery = `Flights from ${origin} to ${destination} on ${departDate}`
+  if (tripType === "round-trip" && returnDate) {
+    searchQuery += ` return ${returnDate}`
+  }
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(searchQuery)}`
+}
 
 /** Color scheme */
 const colors = {
@@ -215,7 +270,7 @@ async function main() {
   mainContainer.add(legendBar)
 
   const legendText = new TextRenderable(renderer, {
-    content: "↑↓ rows │ ←→ cols │ Space sort │ Enter search │ Ctrl+R table │ Esc form │ Tab next",
+    content: "↑↓ rows │ ←→ cols │ Space sort │ Enter open/search │ Ctrl+R table │ Esc form │ Tab next",
     fg: colors.accent,
   })
   legendBar.add(legendText)
@@ -595,6 +650,7 @@ async function main() {
       tableState.selectedCol = 0
       focusableElements.forEach(el => el.blur())
       renderTable()
+      statusText.content = `📋 Table mode\nEnter: open flight\nEsc: back to form`
       renderer.requestRender()
     }
   }
@@ -603,6 +659,7 @@ async function main() {
     tableState.inTableMode = false
     focusableElements[currentFocusIndex].focus()
     renderTable()
+    statusText.content = `✅ ${state.results.length} flights\nR: results | Enter: search`
     renderer.requestRender()
   }
 
@@ -700,6 +757,39 @@ async function main() {
           }
           renderTable()
           renderer.requestRender()
+        }
+      } else if (event.name === "return" || event.name === "enter") {
+        // Open selected flight in Google Flights
+        event.preventDefault()
+        if (tableState.selectedRow >= 0 && tableState.selectedRow < state.results.length) {
+          // Get the sorted flights to match what's displayed in the table
+          const sortedFlights = sortFlights(state.results, tableState.sortColumn, tableState.sortAsc)
+          const selectedFlight = sortedFlights[tableState.selectedRow]
+          
+          // Use the flight's deep_link if available, otherwise fall back to search URL
+          if (selectedFlight.deep_link) {
+            openInBrowser(selectedFlight.deep_link)
+            statusText.content = `🌐 Opening flight...\n${selectedFlight.name}`
+            renderer.requestRender()
+          } else {
+            // Fallback to search URL (async)
+            statusText.content = `🌐 Building URL...`
+            renderer.requestRender()
+            const returnDate = state.tripType === "round-trip" ? state.returnDate : undefined
+            buildGoogleFlightsUrl(
+              state.origin,
+              state.destination,
+              state.departDate,
+              state.tripType,
+              returnDate,
+              state.seatClass,
+              state.passengers
+            ).then(url => {
+              openInBrowser(url)
+              statusText.content = `🌐 Opening search...\n(no direct link)`
+              renderer.requestRender()
+            })
+          }
         }
       } else if (event.name === "escape") {
         event.preventDefault()

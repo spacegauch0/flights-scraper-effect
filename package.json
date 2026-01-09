@@ -10,17 +10,17 @@
     "tui": "bun run tui.ts"
   },
   "dependencies": {
-    "@effect/platform": "^0.93.8",
-    "@effect/platform-node": "^0.103.0",
+    "@effect/platform": "^0.94.1",
+    "@effect/platform-node": "^0.104.0",
     "@effect/schema": "^0.75.5",
-    "@opentui/core": "^0.1.67",
+    "@opentui/core": "^0.1.70",
     "cheerio": "^1.1.2",
-    "effect": "^3.19.12",
-    "protobufjs": "^7.5.4",
-    "puppeteer": "^24.33.0"
+    "effect": "^3.19.14",
+    "protobufjs": "^8.0.0",
+    "puppeteer": "^24.34.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.2",
+    "@types/node": "^25.0.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

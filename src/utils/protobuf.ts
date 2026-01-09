@@ -106,8 +106,9 @@ export const encodeFlightSearch = (
       for (let i = 0; i < passengers.infants_on_lap; i++) passengerArray.push(4) // INFANT_ON_LAP
 
       // Build flight data
+      // NOTE: Date must keep dashes (YYYY-MM-DD format) - Google Flights expects this format
       const data = flightData.map(fd => ({
-        date: fd.date.replace(/-/g, ""), // Remove dashes: "2025-12-25" -> "20251225"
+        date: fd.date, // Keep as YYYY-MM-DD format (e.g., "2026-01-25")
         from_flight: { airport: fd.from_airport },
         to_flight: { airport: fd.to_airport },
         max_stops: fd.max_stops,

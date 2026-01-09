@@ -37,7 +37,8 @@ export class FlightOption extends Schema.Class<FlightOption>("FlightOption")({
   duration: Schema.String,     // Flight duration
   stops: Schema.Number,        // Number of stops
   delay: Schema.optional(Schema.String), // Delay information if any
-  price: Schema.String         // Price as formatted string
+  price: Schema.String,        // Price as formatted string
+  deep_link: Schema.optional(Schema.String) // Direct booking/details link
 }) {}
 
 /** Result with price indicator and flights */

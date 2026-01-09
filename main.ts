@@ -12,7 +12,7 @@ const program = Effect.gen(function* () {
   // --- Configuration ---
   const from = "AEP"
   const to = "SCL"
-  const departDate = "2026-01-04"
+  const departDate = "2026-01-11"
   
   // Set trip type: "one-way" | "round-trip" | "multi-city"
   // const tripType: TripType = "one-way"

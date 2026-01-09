@@ -134,7 +134,8 @@ const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError
           duration,
           stops,
           delay: undefined,
-          price
+          price,
+          deep_link: undefined // Not available from JS data, only from HTML
         }))
       }
       
@@ -207,6 +208,58 @@ const parseHtmlFallback = (html: string): Result => {
       const numeric = priceMatch ? priceMatch[1].replace(/,/g, '') : undefined
       const price = numeric ? `$${numeric}` : "N/A"
       
+      // Deep link - try to extract booking URL from the flight card
+      // Google Flights booking URLs look like: /travel/flights/booking?tfs=...&tfu=...&curr=...
+      let deep_link: string | undefined = undefined
+      
+      // Look for booking links specifically (href containing /travel/flights/booking or tfs=)
+      const bookingLink = $item.find('a[href*="/travel/flights/booking"], a[href*="tfs="]').first()
+      if (bookingLink.length) {
+        const href = bookingLink.attr('href')
+        if (href) {
+          deep_link = href.startsWith('http') ? href : `https://www.google.com${href}`
+        }
+      }
+      
+      // Try to find links with booking-related data attributes
+      if (!deep_link) {
+        const linkEl = $item.find('a[data-tfs], a[data-url*="booking"]').first()
+        if (linkEl.length) {
+          const dataTfs = linkEl.attr('data-tfs')
+          if (dataTfs) {
+            deep_link = `https://www.google.com/travel/flights/booking?tfs=${encodeURIComponent(dataTfs)}&curr=USD`
+          } else {
+            const dataUrl = linkEl.attr('data-url')
+            if (dataUrl) {
+              deep_link = dataUrl.startsWith('http') ? dataUrl : `https://www.google.com${dataUrl}`
+            }
+          }
+        }
+      }
+      
+      // Try the parent li element for booking URL data
+      if (!deep_link) {
+        // Look for any element with jsdata or jsaction that might contain booking info
+        const jsDataEl = $item.find('[jsdata*="tfs"], [data-flt-ve]').first()
+        if (jsDataEl.length) {
+          const jsdata = jsDataEl.attr('jsdata') || ''
+          const tfsMatch = jsdata.match(/tfs=([^&\s;]+)/)
+          if (tfsMatch) {
+            deep_link = `https://www.google.com/travel/flights/booking?tfs=${tfsMatch[1]}&curr=USD`
+          }
+        }
+      }
+      
+      // Last resort: try to extract from onclick or jsaction attributes
+      if (!deep_link) {
+        const clickableEl = $item.find('[onclick*="booking"], [jsaction*="select"]').first()
+        const onclick = clickableEl.attr('onclick') || clickableEl.attr('jsaction') || ''
+        const urlMatch = onclick.match(/\/travel\/flights\/booking\?[^'"]+/)
+        if (urlMatch) {
+          deep_link = `https://www.google.com${urlMatch[0]}`
+        }
+      }
+      
       if (name !== "Unknown") {
         flights.push(new FlightOption({
           is_best: isBestSection && itemIndex === 0,
@@ -217,7 +270,8 @@ const parseHtmlFallback = (html: string): Result => {
           duration,
           stops,
           delay,
-          price
+          price,
+          deep_link
         }))
       }
     })
