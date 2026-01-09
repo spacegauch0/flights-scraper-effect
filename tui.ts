@@ -215,7 +215,7 @@ async function main() {
   mainContainer.add(legendBar)
 
   const legendText = new TextRenderable(renderer, {
-    content: "↑↓ rows │ ←→ cols │ Space sort │ Enter search │ R table │ Esc form │ Tab next",
+    content: "↑↓ rows │ ←→ cols │ Space sort │ Enter search │ Ctrl+R table │ Esc form │ Tab next",
     fg: colors.accent,
   })
   legendBar.add(legendText)
@@ -710,7 +710,7 @@ async function main() {
       if (event.name === "return" || event.name === "enter") {
         event.preventDefault()
         performSearch()
-      } else if (event.name === "r" && !event.ctrl) {
+      } else if (event.ctrl && event.name === "r") {
         event.preventDefault()
         enterTableMode()
       }
