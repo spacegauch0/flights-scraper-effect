@@ -5,19 +5,18 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun run main.ts",
-    "start:production": "bun run main-production.ts",
-    "tui": "bun run tui.ts"
+    "start": "bun run src/main.ts"
   },
   "dependencies": {
-    "@effect/platform": "^0.94.1",
-    "@effect/platform-node": "^0.104.0",
-    "@effect/schema": "^0.75.5",
+    "@effect/platform": "*",
+    "@effect/platform-bun": "*",
+    "@effect/schema": "*",
     "@opentui/core": "^0.1.70",
     "cheerio": "^1.1.2",
-    "effect": "^3.19.14",
+    "effect": "*",
     "protobufjs": "^8.0.0",
-    "puppeteer": "^24.34.0"
+    "puppeteer": "^24.34.0",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@types/node": "^25.0.3",
