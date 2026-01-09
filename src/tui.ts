@@ -433,7 +433,9 @@ export const TuiLive = Layer.effect(
     }
 
     const performSearch = Effect.gen(function* () {
-      if (state.isSearching) return
+      if (state.isSearching) {
+        return
+      }
       yield* clearError()
       state.isSearching = true
       yield* setStatus("🔍 Searching...")
@@ -456,7 +458,7 @@ export const TuiLive = Layer.effect(
       )
       yield* setSearchResults(searchResult.flights, searchResult.current_price)
     }).pipe(
-      Effect.catchAll(error => setErrorMessage(error.message)),
+      Effect.catchAll((error) => setErrorMessage(error.message))
     )
 
     const attachEventListeners = () =>
@@ -631,12 +633,17 @@ export const TuiLive = Layer.effect(
 )
 
 // --- Helper Functions ---
+/** Opens a URL in the default browser */
 const openInBrowser = (url: string) =>
-  Effect.try(() => {
-    const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
-    exec(`${command} "${url}"`)
+  Effect.try({
+    try: () => {
+      const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
+      exec(`${command} "${url}"`)
+    },
+    catch: (e) => new Error(`Failed to open URL: ${e}`),
   })
 
+/** Builds Google Flights search URL using protobuf encoding */
 const buildGoogleFlightsUrl = (
   origin: string,
   destination: string,
@@ -645,6 +652,7 @@ const buildGoogleFlightsUrl = (
   returnDate?: string,
   seatClass: SeatClass = "economy",
   passengers: Passengers = { adults: 1 },
+  currency: string = "USD",
 ) =>
   Effect.gen(function* () {
     const flightData = [{ date: departDate, from_airport: origin, to_airport: destination }]
@@ -654,9 +662,10 @@ const buildGoogleFlightsUrl = (
 
     const tfs = yield* encodeFlightSearch(flightData, tripType, seatClass, passengers)
     const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
+    if (currency) params.set("curr", currency)
     return `https://www.google.com/travel/flights?${params.toString()}`
   }).pipe(
-    Effect.catchTag("ProtobufError", () =>
+    Effect.catchAll(() =>
       Effect.succeed(
         `https://www.google.com/travel/flights?q=${encodeURIComponent(
           `Flights from ${origin} to ${destination} on ${departDate}`,
