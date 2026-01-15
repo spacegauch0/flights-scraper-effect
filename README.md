@@ -57,10 +57,10 @@ You can also use the scraper as a library in your own code:
 import { Effect } from "effect"
 import { ScraperService, ScraperProtobufLive } from "./src"
 
-const program = Effect.gen(function* (_) {
-  const scraper = yield* _(ScraperService)
+const program = Effect.gen(function* () {
+  const scraper = yield* ScraperService
   
-  const result = yield* _(scraper.scrape(
+  const result = yield* scraper.scrape(
     "JFK",              // From
     "LHR",              // To
     "2026-01-19",       // Depart date
@@ -71,7 +71,7 @@ const program = Effect.gen(function* (_) {
     "economy",          // Seat class
     { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }, // Passengers
     ""                  // Currency (empty = default)
-  ))
+  )
   
   console.log(`Found ${result.flights.length} flights`)
   console.log(`Price level: ${result.current_price}`)
@@ -284,19 +284,19 @@ The project includes an interactive terminal UI built with [OpenTUI](https://git
 
 ### Business Class Round-trip for Family
 ```typescript
-const result = yield* _(scraper.scrape(
+const result = yield* scraper.scrape(
   "LAX", "NRT", "2026-01-19", "round-trip", "2026-01-26",
   "price-asc",
   { max_stops: 1, limit: 20 },
   "business",
   { adults: 2, children: 1, infants_in_seat: 0, infants_on_lap: 1 },
   "USD"
-))
+)
 ```
 
 ### Budget Economy with Filters
 ```typescript
-const result = yield* _(scraper.scrape(
+const result = yield* scraper.scrape(
   "ORD", "CDG", "2026-01-19", "one-way", undefined,
   "price-asc",
   { 
@@ -308,7 +308,7 @@ const result = yield* _(scraper.scrape(
   "economy",
   { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
   "USD"
-))
+)
 ```
 
 ## 📚 Tech Stack
