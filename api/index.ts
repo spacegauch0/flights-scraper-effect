@@ -3,8 +3,6 @@
  * This file is used for Vercel deployment
  */
 
-import { createServerlessHandler } from "../src/api/server-hono.js"
-
 // Load environment variables
 const API_KEY = process.env.API_KEY
 
@@ -16,11 +14,13 @@ if (!API_KEY) {
 let handler: ((req: Request) => Promise<Response>) | null = null
 
 export default async function vercelHandler(req: Request): Promise<Response> {
-  // Initialize handler on first request
+  // Initialize handler on first request using dynamic import
   if (!handler) {
     console.log(`📡 Initializing REST API server for Vercel...`)
     console.log(`   API Key: ${API_KEY.substring(0, 8)}...`)
 
+    // Use dynamic import to avoid static analysis issues with Vercel
+    const { createServerlessHandler } = await import("../src/api/server-hono.js")
     handler = await createServerlessHandler(API_KEY)
     
     console.log(`✅ Server initialized`)
