@@ -14,7 +14,8 @@ A high-performance Google Flights scraper built with **TypeScript Effect** and *
 - ✅ **Detailed flight info** (Departure, Arrival, Duration, Stops, Delays)
 
 ### Production Features 🎯
-- ✅ **Response caching** with TTL (15 min default, 300x faster)
+- ✅ **REST API** with Hono (API key authentication, JSON responses)
+- ✅ **Aggressive response caching** (30 min TTL, 500 entry cache, HTTP cache headers)
 - ✅ **Rate limiting** (10 req/min, protects against blocking)
 - ✅ **Retry logic** with exponential backoff (3 attempts default)
 - ✅ **Enhanced error messages** with troubleshooting guides
@@ -36,6 +37,34 @@ npm install
 ```
 
 ## 🎯 Quick Start
+
+### Using the REST API
+
+Start the REST API server:
+
+```bash
+# Create .env file with your API key
+echo "API_KEY=your-secret-api-key-here" > .env
+echo "PORT=3000" >> .env
+
+# Start the server
+bun run api
+# or
+bun run server
+```
+
+Then make requests:
+
+```bash
+# Health check
+curl http://localhost:3000/health -H "x-api-key: your-secret-api-key-here"
+
+# Search flights
+curl "http://localhost:3000/api/flights?from=JFK&to=LHR&departDate=2026-01-19&limit=10" \
+  -H "x-api-key: your-secret-api-key-here"
+```
+
+See [REST API Documentation](#-rest-api) for full details.
 
 ### Using the CLI
 
@@ -85,6 +114,10 @@ Effect.runPromise(program.pipe(Effect.provide(ScraperProtobufLive)))
 ```
 flights-scraper-effect/
 ├── src/
+│   ├── api/              # REST API server
+│   │   ├── server-hono.ts # Hono-based HTTP server
+│   │   ├── index.ts      # API server entry point
+│   │   └── README.md     # API documentation
 │   ├── cli/              # Command-line interface
 │   │   └── index.ts      # CLI implementation with argument parsing
 │   ├── tui/              # Terminal User Interface
@@ -113,6 +146,7 @@ flights-scraper-effect/
 │   ├── IMPLEMENTATION_STATUS.md  # Feature comparison
 │   ├── EFFECT_BEST_PRACTICES.md  # Effect best practices guide
 │   └── SUMMARY.md        # Implementation summary
+├── .env.example          # Environment variables template
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -183,7 +217,183 @@ flights-scraper-effect/
 }
 ```
 
+## 🌐 REST API
+
+The project includes a REST API server built with [Hono](https://hono.dev/) for Bun. All endpoints require API key authentication via the `x-api-key` header.
+
+### Setup
+
+1. Create a `.env` file:
+```bash
+API_KEY=your-secret-api-key-here
+PORT=3000
+```
+
+2. Start the server:
+```bash
+bun run api
+# or
+bun run server
+```
+
+### Caching
+
+The API uses **aggressive caching** to maximize performance:
+
+- **30-minute TTL** - Responses cached for 30 minutes (longer than default 15 min)
+- **500 entry cache** - Large cache size to handle many concurrent searches
+- **HTTP cache headers** - Includes `Cache-Control` headers for CDN/proxy caching
+- **Cache status indicator** - Responses include `cached: true/false` and `X-Cache: HIT/MISS` headers
+- **Stale-while-revalidate** - Serves stale content while refreshing in background
+
+Cache keys include all search parameters (routes, dates, filters, sort, passengers) ensuring accurate cache hits.
+
+### Endpoints
+
+#### GET /health
+
+Health check endpoint.
+
+```bash
+curl http://localhost:3000/health -H "x-api-key: your-api-key"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-02-06T00:00:00.000Z"
+}
+```
+
+#### GET /api/flights
+
+Search for flights using query parameters.
+
+**Query Parameters:**
+- `from` (required): Origin airport code (3-letter IATA, e.g., `JFK`)
+- `to` (required): Destination airport code (3-letter IATA, e.g., `LHR`)
+- `departDate` (required): Departure date (`YYYY-MM-DD`)
+- `tripType` (optional): `one-way`, `round-trip`, `multi-city` (default: `one-way`)
+- `returnDate` (optional): Return date (`YYYY-MM-DD`, required for round-trip)
+- `sort` (optional): `price-asc`, `price-desc`, `duration-asc`, `duration-desc`, `airline`, `none` (default: `price-asc`)
+- `seat` (optional): `economy`, `premium-economy`, `business`, `first` (default: `economy`)
+- `currency` (optional): Currency code (e.g., `USD`, `EUR`)
+- `adults` (optional): Number of adults (default: `1`)
+- `children` (optional): Number of children (default: `0`)
+- `infantsInSeat` (optional): Infants with seat (default: `0`)
+- `infantsOnLap` (optional): Infants on lap (default: `0`)
+- `maxPrice` (optional): Maximum price filter
+- `minPrice` (optional): Minimum price filter
+- `maxDurationMinutes` (optional): Maximum duration in minutes
+- `airlines` (optional): Comma-separated list of airline names
+- `nonstopOnly` (optional): `true`/`false` - only nonstop flights
+- `maxStops` (optional): Maximum stops (0, 1, or 2)
+- `limit` (optional): Maximum results (default: `10`)
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/flights?from=JFK&to=LHR&departDate=2026-01-19&sort=price-asc&limit=10" \
+  -H "x-api-key: your-api-key"
+```
+
+#### POST /api/flights
+
+Search for flights using JSON body.
+
+**Request Body:**
+```json
+{
+  "from": "JFK",
+  "to": "LHR",
+  "departDate": "2026-01-19",
+  "tripType": "one-way",
+  "sort": "price-asc",
+  "seat": "economy",
+  "adults": 1,
+  "children": 0,
+  "infantsInSeat": 0,
+  "infantsOnLap": 0,
+  "limit": 10,
+  "maxPrice": 1000,
+  "maxStops": 1
+}
+```
+
+**Example:**
+```bash
+curl -X POST \
+  -H "x-api-key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"from":"JFK","to":"LHR","departDate":"2026-01-19","limit":10}' \
+  http://localhost:3000/api/flights
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "cached": false,
+  "data": {
+    "current_price": "low",
+    "flights": [
+      {
+        "is_best": true,
+        "name": "British Airways",
+        "departure": "8:00 AM",
+        "arrival": "8:00 PM",
+        "arrival_time_ahead": "+1 day",
+        "duration": "7 hr 0 min",
+        "stops": 0,
+        "price": "$599"
+      }
+    ]
+  }
+}
+```
+
+**Cache Headers:**
+- `Cache-Control: public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600`
+- `X-Cache: HIT` (cached) or `MISS` (fresh)
+- Response includes `cached: true/false` in JSON body
+
+### Error Responses
+
+All errors follow this format:
+
+```json
+{
+  "error": {
+    "reason": "Unauthorized|BadRequest|NotFound|InternalError|InvalidInput|RateLimitExceeded|Timeout|ParsingError|NavigationFailed",
+    "message": "Error description"
+  }
+}
+```
+
+**HTTP Status Codes:**
+- `200` - Success
+- `400` - Bad Request (invalid parameters)
+- `401` - Unauthorized (missing or invalid API key)
+- `404` - Not Found
+- `429` - Rate Limit Exceeded
+- `500` - Internal Server Error
+- `504` - Gateway Timeout
+
+See [`src/api/README.md`](src/api/README.md) for complete API documentation.
+
 ## 🧪 Running
+
+### REST API Server
+
+Start the REST API server:
+
+```bash
+bun run api
+# or
+bun run server
+```
+
+The server will start on the port specified in your `.env` file (default: 3000).
 
 ### Terminal User Interface (TUI)
 
@@ -316,6 +526,7 @@ const result = yield* scraper.scrape(
 - **[Effect](https://effect.website/)** - Functional programming for TypeScript with type-safe error handling
 - **[@effect/platform](https://effect.website/docs/platform)** - Platform abstractions (HTTP client)
 - **[@effect/schema](https://effect.website/docs/schema)** - Schema validation and type safety
+- **[Hono](https://hono.dev/)** - Fast web framework for Bun
 - **[protobufjs](https://github.com/protobufjs/protobuf.js/)** - Protocol Buffer encoding
 - **[Cheerio](https://cheerio.js.org/)** - HTML parsing
 - **[OpenTUI](https://github.com/sst/opentui)** - Terminal user interfaces
@@ -325,6 +536,47 @@ const result = yield* scraper.scrape(
 
 - Inspired by [fast-flights](https://github.com/AWeirdDev/flights) by @AWeirdDev
 - Reverse engineering insights from the Python implementation
+
+## 🚀 Deployment
+
+### Vercel Deployment
+
+The API is ready to deploy to Vercel as a serverless function.
+
+**Quick Deploy:**
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Login and deploy
+vercel
+
+# Set environment variable
+vercel env add API_KEY
+
+# Deploy to production
+vercel --prod
+```
+
+**Configuration:**
+- Serverless function: `api/index.ts`
+- Runtime: Node.js 20.x
+- Max duration: 60 seconds
+- All routes rewrite to `/api` handler
+
+**Environment Variables:**
+- `API_KEY` (required) - Your API key for authentication
+
+**Features:**
+- ✅ Serverless function with Hono
+- ✅ Aggressive caching (30 min TTL, 500 entries)
+- ✅ HTTP cache headers for CDN caching
+- ✅ Automatic handler reuse within instances
+
+**Note:** Cache is in-memory and per-instance. For distributed caching across Vercel instances, consider using Vercel KV or Redis.
+
+See [`DEPLOY.md`](DEPLOY.md) for detailed deployment instructions.
 
 ## 📄 License
 
@@ -336,3 +588,4 @@ MIT
 2. **Rate Limiting**: Google may rate-limit excessive requests
 3. **Price Currency**: Prices are returned in the currency Google serves (may vary by region)
 4. **Multi-city**: Not fully tested yet
+5. **Vercel Cache**: In-memory cache is per-instance. For distributed caching, use external cache (Redis/Vercel KV)

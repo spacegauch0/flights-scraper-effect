@@ -8,15 +8,20 @@
     "start": "bun run src/cli.ts",
     "cli": "bun run src/cli.ts",
     "tui": "bun run src/cli.ts --tui",
-    "production": "bun run src/cli.ts --production"
+    "production": "bun run src/cli.ts --production",
+    "api": "bun run src/api/index.ts",
+    "server": "bun run src/api/index.ts",
+    "vercel-build": "echo 'No build step required'"
   },
   "dependencies": {
     "@effect/platform": "^0.94.1",
+    "@effect/platform-bun": "^0.87.1",
     "@effect/platform-node": "^0.104.0",
     "@effect/schema": "^0.75.5",
     "@opentui/core": "^0.1.70",
     "cheerio": "^1.1.2",
     "effect": "^3.19.14",
+    "hono": "^4.11.7",
     "protobufjs": "^8.0.0",
     "puppeteer": "^24.34.0"
   },
