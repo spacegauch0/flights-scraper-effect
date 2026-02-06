@@ -11,7 +11,7 @@
     "production": "bun run src/cli.ts --production",
     "api": "bun run src/api/index.ts",
     "server": "bun run src/api/index.ts",
-    "vercel-build": "esbuild src/api/server-hono.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/_server.js --packages=external"
+    "vercel-build": "echo 'No build step needed — Bun runs TypeScript natively'"
   },
   "dependencies": {
     "@effect/platform": "^0.94.1",
@@ -28,6 +28,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.8",
     "@types/node": "^25.0.3",
     "esbuild": "^0.27.3",
     "ts-node": "^10.9.2",

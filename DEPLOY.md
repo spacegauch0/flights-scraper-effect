@@ -53,26 +53,20 @@ The project includes a `vercel.json` configuration file:
 
 ```json
 {
-  "version": 2,
+  "bunVersion": "1.x",
   "rewrites": [
     {
       "source": "/(.*)",
       "destination": "/api"
     }
-  ],
-  "functions": {
-    "api/index.ts": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 60
-    }
-  }
+  ]
 }
 ```
 
 **Key Settings:**
-- **Runtime**: Node.js 20.x
-- **Max Duration**: 60 seconds (for flight scraping operations)
-- **Rewrites**: All routes (`/*`) are handled by `/api/index.ts`
+- **Runtime**: Bun 1.x (runs TypeScript natively, no build step needed)
+- **Rewrites**: All routes (`/*`) are handled by `api/index.ts`
+- No esbuild bundling step — Bun handles TypeScript imports directly
 
 ### Environment Variables
 
@@ -85,9 +79,10 @@ Set in Vercel Dashboard → Project Settings → Environment Variables
 
 The serverless function is located at `api/index.ts`:
 
-- Uses Hono framework (compatible with Vercel)
-- Initializes services on first request
-- Reuses handler for subsequent requests (within same instance)
+- Uses Hono framework on the Bun runtime (native Vercel support)
+- Initializes Effect services once per cold start via top-level await
+- Exports the Hono app directly (`export default app`)
+- Vercel calls `app.fetch(req)` for each incoming request
 - Maintains in-memory cache per instance
 
 ## Caching Behavior
@@ -127,7 +122,7 @@ curl "https://your-app.vercel.app/api/flights?from=JFK&to=LHR&departDate=2026-01
 ### Function Timeout
 
 If requests timeout:
-- Increase `maxDuration` in `vercel.json` (max 60s for Hobby, 300s for Pro)
+- Add `"functions": { "api/index.ts": { "maxDuration": 60 } }` to `vercel.json` (max 60s for Hobby, 300s for Pro)
 - Optimize scraper queries
 - Use caching to reduce scrape frequency
 

@@ -4,7 +4,7 @@
  */
 
 import { Hono } from "hono"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Context } from "effect"
 import { FetchHttpClient } from "@effect/platform"
 import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
 import { ScraperError } from "../domain/errors"
@@ -203,7 +203,7 @@ const parseJsonBody = async (c: any): Promise<FlightSearchQuery> => {
  * Convert ScraperError to HTTP error response
  */
 const handleScraperError = (error: ScraperError) => {
-  const statusCode =
+  const statusCode: 400 | 429 | 500 | 504 =
     error.reason === "InvalidInput"
       ? 400
       : error.reason === "RateLimitExceeded"
@@ -234,8 +234,8 @@ const apiCacheConfig = {
  */
 export const createApp = (
   apiKey: string,
-  scraperService: ScraperService,
-  cacheService: CacheService
+  scraperService: Context.Tag.Service<typeof ScraperService>,
+  cacheService: Context.Tag.Service<typeof CacheService>
 ) => {
   const app = new Hono()
 
@@ -268,7 +268,7 @@ export const createApp = (
         maxPrice: query.maxPrice,
         minPrice: query.minPrice,
         maxDurationMinutes: query.maxDurationMinutes,
-        airlines: query.airlines,
+        airlines: query.airlines ? [...query.airlines] : undefined,
         nonstopOnly: query.nonstopOnly,
         max_stops: query.maxStops,
         limit: query.limit
@@ -287,14 +287,9 @@ export const createApp = (
       // Check cache first
       const cached = await cacheService.get(cacheKey).pipe(Effect.runPromise)
       if (cached) {
-        // Return cached result with aggressive cache headers
         return c.json(
-          {
-            success: true,
-            data: cached,
-            cached: true
-          },
-          200,
+          { success: true, data: cached, cached: true },
+          200 as const,
           {
             "Cache-Control": "public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600",
             "X-Cache": "HIT"
@@ -321,14 +316,9 @@ export const createApp = (
       // Store in cache
       await cacheService.set(cacheKey, result).pipe(Effect.runPromise)
 
-      // Return with cache headers
       return c.json(
-        {
-          success: true,
-          data: result,
-          cached: false
-        },
-        200,
+        { success: true, data: result, cached: false },
+        200 as const,
         {
           "Cache-Control": "public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600",
           "X-Cache": "MISS"
@@ -342,30 +332,20 @@ export const createApp = (
       if (error instanceof ApiError) {
         const statusCode =
           error.reason === "Unauthorized"
-            ? 401
+            ? (401 as const)
             : error.reason === "BadRequest"
-            ? 400
+            ? (400 as const)
             : error.reason === "NotFound"
-            ? 404
-            : 500
+            ? (404 as const)
+            : (500 as const)
         return c.json(
-          {
-            error: {
-              reason: error.reason,
-              message: error.message
-            }
-          },
+          { error: { reason: error.reason, message: error.message } },
           statusCode
         )
       }
       return c.json(
-        {
-          error: {
-            reason: "InternalError",
-            message: String(error)
-          }
-        },
-        500
+        { error: { reason: "InternalError", message: String(error) } },
+        500 as const
       )
     }
   })
@@ -379,7 +359,7 @@ export const createApp = (
         maxPrice: body.maxPrice,
         minPrice: body.minPrice,
         maxDurationMinutes: body.maxDurationMinutes,
-        airlines: body.airlines,
+        airlines: body.airlines ? [...body.airlines] : undefined,
         nonstopOnly: body.nonstopOnly,
         max_stops: body.maxStops,
         limit: body.limit
@@ -398,14 +378,9 @@ export const createApp = (
       // Check cache first
       const cached = await cacheService.get(cacheKey).pipe(Effect.runPromise)
       if (cached) {
-        // Return cached result with aggressive cache headers
         return c.json(
-          {
-            success: true,
-            data: cached,
-            cached: true
-          },
-          200,
+          { success: true, data: cached, cached: true },
+          200 as const,
           {
             "Cache-Control": "public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600",
             "X-Cache": "HIT"
@@ -432,14 +407,9 @@ export const createApp = (
       // Store in cache
       await cacheService.set(cacheKey, result).pipe(Effect.runPromise)
 
-      // Return with cache headers
       return c.json(
-        {
-          success: true,
-          data: result,
-          cached: false
-        },
-        200,
+        { success: true, data: result, cached: false },
+        200 as const,
         {
           "Cache-Control": "public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600",
           "X-Cache": "MISS"
@@ -453,30 +423,20 @@ export const createApp = (
       if (error instanceof ApiError) {
         const statusCode =
           error.reason === "Unauthorized"
-            ? 401
+            ? (401 as const)
             : error.reason === "BadRequest"
-            ? 400
+            ? (400 as const)
             : error.reason === "NotFound"
-            ? 404
-            : 500
+            ? (404 as const)
+            : (500 as const)
         return c.json(
-          {
-            error: {
-              reason: error.reason,
-              message: error.message
-            }
-          },
+          { error: { reason: error.reason, message: error.message } },
           statusCode
         )
       }
       return c.json(
-        {
-          error: {
-            reason: "InternalError",
-            message: String(error)
-          }
-        },
-        500
+        { error: { reason: "InternalError", message: String(error) } },
+        500 as const
       )
     }
   })
