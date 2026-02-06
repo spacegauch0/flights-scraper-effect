@@ -1,9 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "bunVersion": "1.x",
   "rewrites": [
     {
       "source": "/(.*)",
       "destination": "/api"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 60
+    }
+  }
 }
