@@ -2,7 +2,7 @@
  * Retry logic with exponential backoff for Effect operations
  */
 
-import { Effect, Schedule, Duration, Console } from "effect"
+import { Effect, Schedule, Duration } from "effect"
 import { ScraperError } from "../domain"
 
 /**
@@ -13,7 +13,7 @@ export interface RetryConfig {
   maxAttempts?: number
   /** Initial delay in milliseconds */
   initialDelay?: number
-  /** Maximum delay in milliseconds */
+  /** Maximum delay in milliseconds (caps individual delays) */
   maxDelay?: number
   /** Backoff factor (multiplier for each retry) */
   backoffFactor?: number
@@ -30,7 +30,12 @@ export const defaultRetryConfig: RetryConfig = {
 }
 
 /**
- * Creates a retry schedule with exponential backoff
+ * Creates a retry schedule with exponential backoff, jitter, and a cap.
+ *
+ * - Exponential delays: initialDelay, initialDelay * factor, initialDelay * factor^2, ...
+ * - Individual delays capped at maxDelay via union (takes the minimum of the two schedules)
+ * - Jitter applied to avoid thundering herd across parallel instances
+ * - Total attempts capped at maxAttempts (intersect with recurs)
  */
 export const createRetrySchedule = (config: RetryConfig = defaultRetryConfig) => {
   const {
@@ -40,13 +45,14 @@ export const createRetrySchedule = (config: RetryConfig = defaultRetryConfig) =>
     backoffFactor = 2
   } = config
 
-  return Schedule.exponential(Duration.millis(initialDelay), backoffFactor)
-    .pipe(
-      Schedule.either(Schedule.spaced(Duration.millis(maxDelay))),
-      Schedule.compose(Schedule.elapsed),
-      Schedule.whileOutput(Duration.lessThanOrEqualTo(Duration.millis(maxDelay))),
-      Schedule.intersect(Schedule.recurs(maxAttempts - 1))
-    )
+  return Schedule.exponential(Duration.millis(initialDelay), backoffFactor).pipe(
+    // Cap individual delay at maxDelay: union takes the shorter delay
+    Schedule.union(Schedule.spaced(Duration.millis(maxDelay))),
+    // Add +/- 20% jitter to prevent thundering herd
+    Schedule.jittered,
+    // Cap total number of retries
+    Schedule.intersect(Schedule.recurs(maxAttempts - 1))
+  )
 }
 
 /**
@@ -78,7 +84,7 @@ export const withRetry = <A, E extends ScraperError, R>(
 }
 
 /**
- * Wraps an Effect with retry logic and logging
+ * Wraps an Effect with retry logic and structured logging.
  */
 export const withRetryAndLog = <A, E extends ScraperError, R>(
   effect: Effect.Effect<A, E, R>,
@@ -86,10 +92,12 @@ export const withRetryAndLog = <A, E extends ScraperError, R>(
   config: RetryConfig = defaultRetryConfig
 ): Effect.Effect<A, E, R> => {
   const policy = createRetrySchedule(config)
-  
+
   return effect.pipe(
     Effect.tapError((error: E) =>
-      Effect.log(`⚠️  ${operationName} failed: ${error.message}. Retrying...`)
+      Effect.logWarning(`${operationName} failed, will retry if retryable`).pipe(
+        Effect.annotateLogs({ operation: operationName, reason: error.reason })
+      )
     ),
     Effect.retry({
       schedule: policy,
@@ -98,7 +106,9 @@ export const withRetryAndLog = <A, E extends ScraperError, R>(
       }
     }),
     Effect.tapError((error: E) =>
-      Effect.log(`❌ ${operationName} failed after all retries: ${error.message}`)
+      Effect.logError(`${operationName} failed after all retries`).pipe(
+        Effect.annotateLogs({ operation: operationName, reason: error.reason })
+      )
     )
   )
 }

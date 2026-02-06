@@ -32,16 +32,17 @@ export const defaultCacheConfig: CacheConfig = {
 }
 
 /**
- * Cache service interface
+ * Cache service definition using idiomatic Effect v3 class-based Tag.
  */
-export interface CacheService {
-  readonly get: (key: string) => Effect.Effect<Result | null>
-  readonly set: (key: string, value: Result) => Effect.Effect<void>
-  readonly clear: () => Effect.Effect<void>
-  readonly size: () => Effect.Effect<number>
-}
-
-export const CacheService = Context.GenericTag<CacheService>("CacheService")
+export class CacheService extends Context.Tag("CacheService")<
+  CacheService,
+  {
+    readonly get: (key: string) => Effect.Effect<Result | null>
+    readonly set: (key: string, value: Result) => Effect.Effect<void>
+    readonly clear: () => Effect.Effect<void>
+    readonly size: () => Effect.Effect<number>
+  }
+>() {}
 
 /**
  * Creates a cache key from search parameters
@@ -56,7 +57,8 @@ export const createCacheKey = (
   adults: number,
   children: number,
   infants_in_seat: number,
-  infants_on_lap: number
+  infants_on_lap: number,
+  currency: string = "USD"
 ): string => {
   const params = [
     from,
@@ -68,7 +70,8 @@ export const createCacheKey = (
     adults,
     children,
     infants_in_seat,
-    infants_on_lap
+    infants_on_lap,
+    currency.toUpperCase()
   ]
   return params.join("|")
 }
@@ -85,7 +88,7 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
       // Create a ref to hold the cache
       const cacheRef = yield* Ref.make(new Map<string, CacheEntry>())
 
-      return CacheService.of({
+      return {
         get: (key: string) =>
           Effect.gen(function* () {
             const cache = yield* Ref.get(cacheRef)
@@ -98,10 +101,11 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
             // Check if entry is expired
             const now = Date.now()
             if (now - entry.timestamp > ttl) {
-              // Remove expired entry
-              yield* Ref.update(cacheRef, (cache) => {
-                cache.delete(key)
-                return cache
+              // Remove expired entry (immutable: create new Map)
+              yield* Ref.update(cacheRef, (prev) => {
+                const next = new Map(prev)
+                next.delete(key)
+                return next
               })
               return null
             }
@@ -113,13 +117,15 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
           Effect.gen(function* () {
             const now = Date.now()
 
-            yield* Ref.update(cacheRef, (cache) => {
+            yield* Ref.update(cacheRef, (prev) => {
+              const next = new Map(prev)
+
               // Remove oldest entry if cache is full
-              if (cache.size >= maxSize) {
+              if (next.size >= maxSize) {
                 let oldestKey: string | null = null
                 let oldestTime = Infinity
 
-                for (const [k, v] of cache.entries()) {
+                for (const [k, v] of next.entries()) {
                   if (v.timestamp < oldestTime) {
                     oldestTime = v.timestamp
                     oldestKey = k
@@ -127,13 +133,13 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
                 }
 
                 if (oldestKey) {
-                  cache.delete(oldestKey)
+                  next.delete(oldestKey)
                 }
               }
 
               // Add new entry
-              cache.set(key, { data: value, timestamp: now })
-              return cache
+              next.set(key, { data: value, timestamp: now })
+              return next
             })
           }),
 
@@ -147,7 +153,7 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
             const cache = yield* Ref.get(cacheRef)
             return cache.size
           })
-      })
+      }
     })
   )
 
@@ -156,11 +162,11 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
  */
 export const CacheDisabled = Layer.succeed(
   CacheService,
-  CacheService.of({
+  {
     get: () => Effect.succeed(null),
     set: () => Effect.void,
     clear: () => Effect.void,
     size: () => Effect.succeed(0)
-  })
+  }
 )
 

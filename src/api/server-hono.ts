@@ -94,7 +94,8 @@ const createSearchCacheKey = (query: FlightSearchQuery, filters: any): string =>
     query.adults,
     query.children,
     query.infantsInSeat,
-    query.infantsOnLap
+    query.infantsOnLap,
+    query.currency || "USD"
   )}|${query.sort}|${filterStr}`
 }
 
@@ -498,35 +499,30 @@ export const createApp = (
 
 /**
  * Initialize services (cache, scraper, etc.)
- * This is separated so it can be reused in serverless environments
+ * This is separated so it can be reused in serverless environments.
+ *
+ * Uses Layer.provideMerge so that CacheService is a single shared instance
+ * consumed by both ScraperProductionLive and the API handlers.
  */
 export const initializeServices = async () => {
   console.log(`💾 Aggressive caching enabled (TTL: ${apiCacheConfig.ttl / 1000 / 60} min, Max size: ${apiCacheConfig.maxSize})`)
 
-  // Create cache layer with aggressive settings
-  const cacheLayer = CacheLive(apiCacheConfig)
-
-  // Create rate limiter layer
-  const rateLimiterLayer = RateLimiterLive(defaultRateLimiterConfig)
-
-  // Create scraper service layer with production features (cache + rate limit + retry)
-  const scraperLayer = ScraperProductionLive.pipe(
-    Layer.provide(cacheLayer),
-    Layer.provide(rateLimiterLayer),
+  // Build a unified layer where CacheService is shared (not duplicated)
+  // provideMerge provides the dep to ScraperProductionLive AND passes it through
+  const appLayer = ScraperProductionLive.pipe(
+    Layer.provideMerge(CacheLive(apiCacheConfig)),
+    Layer.provide(RateLimiterLive(defaultRateLimiterConfig)),
     Layer.provide(FetchHttpClient.layer)
   )
 
-  // Get services
   const { scraperService, cacheService } = await Effect.gen(function* () {
     const scraper = yield* ScraperService
     const cache = yield* CacheService
     return { scraperService: scraper, cacheService: cache }
-  })
-    .pipe(
-      Effect.provide(scraperLayer),
-      Effect.provide(cacheLayer),
-      Effect.runPromise
-    )
+  }).pipe(
+    Effect.provide(appLayer),
+    Effect.runPromise
+  )
 
   return { scraperService, cacheService }
 }

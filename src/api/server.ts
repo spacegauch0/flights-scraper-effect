@@ -158,17 +158,20 @@ const healthHandler: Effect.Effect<HttpServerResponse.HttpServerResponse, never,
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     
-    // Simple API key check
+    // Validate API key via the injected service
+    const apiKeyService = yield* ApiKeyService
     const apiKey = request.headers["x-api-key"] || request.headers["X-Api-Key"]
-    if (!apiKey || apiKey !== "your-api-key") {
+    if (!apiKey || typeof apiKey !== "string") {
       return HttpServerResponse.text(JSON.stringify({
-        error: { reason: "Unauthorized", message: "Invalid API key" }
+        error: { reason: "Unauthorized", message: "Missing API key" }
       })).pipe(
         HttpServerResponse.status(401),
         HttpServerResponse.header("Content-Type", "application/json")
       )
     }
-    
+
+    yield* apiKeyService.validate(apiKey)
+
     // Return success response
     return HttpServerResponse.text(JSON.stringify({
       status: "ok",

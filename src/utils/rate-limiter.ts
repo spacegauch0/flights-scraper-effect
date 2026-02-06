@@ -35,15 +35,16 @@ interface RequestRecord {
 }
 
 /**
- * Rate limiter service interface
+ * Rate limiter service definition using idiomatic Effect v3 class-based Tag.
  */
-export interface RateLimiterService {
-  readonly acquire: () => Effect.Effect<void, ScraperError>
-  readonly reset: () => Effect.Effect<void>
-  readonly getStats: () => Effect.Effect<{ requests: number; windowMs: number }>
-}
-
-export const RateLimiterService = Context.GenericTag<RateLimiterService>("RateLimiterService")
+export class RateLimiterService extends Context.Tag("RateLimiterService")<
+  RateLimiterService,
+  {
+    readonly acquire: () => Effect.Effect<void, ScraperError>
+    readonly reset: () => Effect.Effect<void>
+    readonly getStats: () => Effect.Effect<{ requests: number; windowMs: number }>
+  }
+>() {}
 
 /**
  * In-memory rate limiter implementation using sliding window
@@ -58,43 +59,45 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
       const requestsRef = yield* Ref.make<RequestRecord[]>([])
       const lastRequestRef = yield* Ref.make<number>(0)
 
-      return RateLimiterService.of({
+      return {
         acquire: () =>
           Effect.gen(function* () {
             const now = Date.now()
-            
-            // Get current requests within the window
-            const requests = yield* Ref.get(requestsRef)
             const windowStart = now - windowMs
-            const recentRequests = requests.filter(r => r.timestamp > windowStart)
 
-            // Check if we've exceeded the rate limit
-            if (recentRequests.length >= maxRequests) {
-              const oldestRequest = recentRequests[0]
-              const waitTime = oldestRequest.timestamp + windowMs - now
-              
+            // Atomically check rate limit AND record the request in one step.
+            // This prevents TOCTOU races and lost updates under concurrency.
+            const checkResult = yield* Ref.modify(requestsRef, (requests): readonly [{ allowed: boolean; waitTime: number }, RequestRecord[]] => {
+              const recent = requests.filter(r => r.timestamp > windowStart)
+
+              if (recent.length >= maxRequests) {
+                const oldestRequest = recent[0]
+                const waitTime = oldestRequest.timestamp + windowMs - now
+                // Return rejection result, leave state unchanged
+                return [{ allowed: false, waitTime }, requests] as const
+              }
+
+              // Record this request atomically with the check
+              const updated = [...recent, { timestamp: now }]
+              return [{ allowed: true, waitTime: 0 }, updated] as const
+            })
+
+            if (!checkResult.allowed) {
               return yield* Effect.fail(new ScraperError({
                 reason: "RateLimitExceeded",
-                message: `Rate limit exceeded. Please wait ${Math.ceil(waitTime / 1000)} seconds before trying again.`
+                message: `Rate limit exceeded. Please wait ${Math.ceil(checkResult.waitTime / 1000)} seconds before trying again.`
               }))
             }
 
-            // Check minimum delay between requests
-            const lastRequest = yield* Ref.get(lastRequestRef)
+            // Enforce minimum delay between requests.
+            // getAndSet is atomic: only one fiber sees the old value.
+            const lastRequest = yield* Ref.getAndSet(lastRequestRef, now)
             const timeSinceLastRequest = now - lastRequest
-            
+
             if (timeSinceLastRequest < minDelay && lastRequest > 0) {
               const waitTime = minDelay - timeSinceLastRequest
               yield* Effect.sleep(Duration.millis(waitTime))
             }
-
-            // Update request history
-            yield* Ref.update(requestsRef, () => [
-              ...recentRequests,
-              { timestamp: Date.now() }
-            ])
-            
-            yield* Ref.set(lastRequestRef, Date.now())
           }),
 
         reset: () =>
@@ -115,7 +118,7 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
               windowMs
             }
           })
-      })
+      }
     })
   )
 
@@ -124,10 +127,10 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
  */
 export const RateLimiterDisabled = Layer.succeed(
   RateLimiterService,
-  RateLimiterService.of({
+  {
     acquire: () => Effect.void,
     reset: () => Effect.void,
     getStats: () => Effect.succeed({ requests: 0, windowMs: 0 })
-  })
+  }
 )
 

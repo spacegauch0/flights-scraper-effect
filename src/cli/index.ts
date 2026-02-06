@@ -8,7 +8,6 @@ import { FetchHttpClient } from "@effect/platform"
 import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
 import { CacheLive, RateLimiterLive, defaultCacheConfig, defaultRateLimiterConfig } from "../utils"
 import type { TripType, SeatClass, Passengers, FlightFilters, SortOption } from "../domain"
-import { Schema } from "@effect/schema"
 
 /**
  * CLI Arguments interface
