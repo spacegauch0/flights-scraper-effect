@@ -11,7 +11,7 @@
     "production": "bun run src/cli.ts --production",
     "api": "bun run src/api/index.ts",
     "server": "bun run src/api/index.ts",
-    "vercel-build": "esbuild src/api/vercel.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/index.mjs --packages=external"
+    "vercel-build": "esbuild src/api/vercel.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/index.js --packages=external"
   },
   "dependencies": {
     "@effect/platform": "^0.94.1",
