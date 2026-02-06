@@ -3,7 +3,7 @@
  * This file is used for Vercel deployment
  */
 
-import { createServerlessHandler } from "../src/api/server-hono"
+import { createServerlessHandler } from "../src/api/server-hono.js"
 
 // Load environment variables
 const API_KEY = process.env.API_KEY
