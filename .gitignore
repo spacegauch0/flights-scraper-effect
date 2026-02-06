@@ -4,3 +4,4 @@ results.html
 dist/
 tmp/
 docs/
+.vercel
