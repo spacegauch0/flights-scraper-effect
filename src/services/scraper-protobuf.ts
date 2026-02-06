@@ -28,7 +28,8 @@ const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, Http
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "none",
-        "Cache-Control": "max-age=0"
+        "Cache-Control": "max-age=0",
+        "Cookie": "CONSENT=PENDING+987; SOCS=CAESHAgBEhJnd3NfMjAyMzA4MTAtMF9SQzIaAmRlIAEaBgiAo_CmBg"
       }
     }).pipe(
       Effect.mapError((error) => 
@@ -105,12 +106,11 @@ const parseHtmlFallback = (html: string): Result => {
       // Delay - only first match
       const delay = $item.find('.GsCCve').first().text().trim() || undefined
       
-      // Price - only get first price element and normalize
-      const priceEl = $item.find('.YMlIz.FpEdX span').first()
-      const priceText = priceEl.length ? priceEl.text().trim() : $item.find('.YMlIz.FpEdX').first().text().trim()
-      const priceMatch = priceText.match(/\$?\s*([\d,]+)/)
-      const numeric = priceMatch ? priceMatch[1].replace(/,/g, '') : undefined
-      const price = numeric ? `$${numeric}` : "N/A"
+      // Price - match Python reference: .css_first(".YMlIz.FpEdX").text()
+      const priceEl = $item.find('.YMlIz.FpEdX').first()
+      const rawPrice = priceEl.length ? priceEl.text().trim() : ""
+      // Strip commas to normalize (e.g., "$1,234" -> "$1234"), fallback to "N/A"
+      const price = rawPrice ? rawPrice.replace(/,/g, '') : "N/A"
       
       // Deep link - try to extract booking URL from the flight card
       // Google Flights booking URLs look like: /travel/flights/booking?tfs=...&tfu=...&curr=...
@@ -292,7 +292,7 @@ export const ScraperProtobufLive: Layer.Layer<ScraperService, never, HttpClient.
           // Default values
           const seatClass: SeatClass = seat || "economy"
           const passengerCounts: Passengers = passengers || { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }
-          const curr = currency || ""
+          const curr = currency || "USD"
 
           // Build flight data
           const flightData: ProtobufFlightData[] = [

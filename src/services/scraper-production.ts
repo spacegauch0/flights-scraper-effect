@@ -38,7 +38,8 @@ const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, Rate
             "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
-            "Cache-Control": "max-age=0"
+            "Cache-Control": "max-age=0",
+            "Cookie": "CONSENT=PENDING+987; SOCS=CAESHAgBEhJnd3NfMjAyMzA4MTAtMF9SQzIaAmRlIAEaBgiAo_CmBg"
           }
         }).pipe(
           Effect.mapError((error) => ScraperErrors.navigationFailed(url, String(error)))
@@ -70,79 +71,95 @@ const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError
 const parseHtmlFallback = (html: string): Result => {
   const $ = cheerio.load(html)
   const flights: FlightOption[] = []
-  const cards = $('li.pIav2d')
+
+  // Use same selectors as Python reference: div[jsname="IWWDBc"] (best), div[jsname="YdtKid"] (other)
+  const flightContainers = $('div[jsname="IWWDBc"], div[jsname="YdtKid"]')
   
-  cards.each((index, element) => {
-    const card = $(element)
-    const text = card.text()
+  flightContainers.each((containerIndex, container) => {
+    const isBestSection = containerIndex === 0
 
-    const priceMatch = text.match(/(?:ARS|USD|EUR|GBP|\$)\s*[\u00A0\s]*(\d{1,3}(?:[,\s]\d{3})*|\d+)/)
-    const price = priceMatch ? priceMatch[0] : "N/A"
+    $(container).find('ul.Rk10dc li').each((itemIndex, item) => {
+      const $item = $(item)
 
-    let airline = "Unknown"
-    const airlineElements = card.find('.sSHqwe')
-    for (let i = 0; i < airlineElements.length; i++) {
-      const currentAirlineText = $(airlineElements[i]).text().trim()
-      if (currentAirlineText && !currentAirlineText.includes("kg CO2") && !currentAirlineText.includes("Aged")) {
-        airline = currentAirlineText
-        break
+      // Airline name
+      const name = $item.find('div.sSHqwe.tPgKwe.ogfYpf span').first().text().trim() || "Unknown"
+
+      // Departure & arrival time
+      const timeNodes = $item.find('span.mv1WYe div')
+      const departure = timeNodes.length > 0 ? $(timeNodes[0]).text().trim().replace(/\s+/g, ' ') : ""
+      const arrival = timeNodes.length > 1 ? $(timeNodes[1]).text().trim().replace(/\s+/g, ' ') : ""
+
+      // Arrival time ahead (e.g., "+1")
+      const arrivalTimeAhead = $item.find('span.bOzv6').first().text().trim() || undefined
+
+      // Duration
+      const durationEl = $item.find('li div.Ak5kof div').first()
+      const duration = durationEl.text().trim() || "N/A"
+
+      // Stops
+      const stopsEl = $item.find('.BbR8Ec .ogfYpf').first()
+      const stopsText = stopsEl.text().trim()
+      let stops = 0
+      if (stopsText && stopsText !== "Nonstop") {
+        const match = stopsText.match(/^(\d+)/)
+        if (match) stops = parseInt(match[1])
       }
-    }
 
-    const duration = card.find('.gvkrdb').text().trim() || "N/A"
-    const nonstop = text.includes("Nonstop")
-    const stops = nonstop ? 0 : 1
+      // Delay
+      const delay = $item.find('.GsCCve').first().text().trim() || undefined
 
-    // Deep link - try to extract booking URL from the flight card
-    // Google Flights booking URLs look like: /travel/flights/booking?tfs=...&tfu=...&curr=...
-    let deep_link: string | undefined = undefined
-    
-    // Look for booking links specifically
-    const bookingLink = card.find('a[href*="/travel/flights/booking"], a[href*="tfs="]').first()
-    if (bookingLink.length) {
-      const href = bookingLink.attr('href')
-      if (href) {
-        deep_link = href.startsWith('http') ? href : `https://www.google.com${href}`
-      }
-    }
-    
-    // Try data attributes
-    if (!deep_link) {
-      const linkEl = card.find('a[data-tfs], a[data-url*="booking"]').first()
-      if (linkEl.length) {
-        const dataTfs = linkEl.attr('data-tfs')
-        if (dataTfs) {
-          deep_link = `https://www.google.com/travel/flights/booking?tfs=${encodeURIComponent(dataTfs)}&curr=USD`
+      // Price - match Python reference: .css_first(".YMlIz.FpEdX").text()
+      const priceEl = $item.find('.YMlIz.FpEdX').first()
+      const rawPrice = priceEl.length ? priceEl.text().trim() : ""
+      const price = rawPrice ? rawPrice.replace(/,/g, '') : "N/A"
+
+      // Deep link - try to extract booking URL from the flight card
+      let deep_link: string | undefined = undefined
+
+      const bookingLink = $item.find('a[href*="/travel/flights/booking"], a[href*="tfs="]').first()
+      if (bookingLink.length) {
+        const href = bookingLink.attr('href')
+        if (href) {
+          deep_link = href.startsWith('http') ? href : `https://www.google.com${href}`
         }
       }
-    }
-    
-    // Try jsdata attributes for tfs parameter
-    if (!deep_link) {
-      const jsDataEl = card.find('[jsdata*="tfs"]').first()
-      if (jsDataEl.length) {
-        const jsdata = jsDataEl.attr('jsdata') || ''
-        const tfsMatch = jsdata.match(/tfs=([^&\s;]+)/)
-        if (tfsMatch) {
-          deep_link = `https://www.google.com/travel/flights/booking?tfs=${tfsMatch[1]}&curr=USD`
+
+      if (!deep_link) {
+        const linkEl = $item.find('a[data-tfs], a[data-url*="booking"]').first()
+        if (linkEl.length) {
+          const dataTfs = linkEl.attr('data-tfs')
+          if (dataTfs) {
+            deep_link = `https://www.google.com/travel/flights/booking?tfs=${encodeURIComponent(dataTfs)}&curr=USD`
+          }
         }
       }
-    }
 
-    if (airline !== "Unknown") {
-      flights.push(new FlightOption({
-        is_best: index === 0,
-        name: airline,
-        departure: "",
-        arrival: "",
-        arrival_time_ahead: undefined,
-        duration,
-        stops,
-        delay: undefined,
-        price,
-        deep_link
-      }))
-    }
+      if (!deep_link) {
+        const jsDataEl = $item.find('[jsdata*="tfs"]').first()
+        if (jsDataEl.length) {
+          const jsdata = jsDataEl.attr('jsdata') || ''
+          const tfsMatch = jsdata.match(/tfs=([^&\s;]+)/)
+          if (tfsMatch) {
+            deep_link = `https://www.google.com/travel/flights/booking?tfs=${tfsMatch[1]}&curr=USD`
+          }
+        }
+      }
+
+      if (name !== "Unknown") {
+        flights.push(new FlightOption({
+          is_best: isBestSection && itemIndex === 0,
+          name,
+          departure,
+          arrival,
+          arrival_time_ahead: arrivalTimeAhead,
+          duration,
+          stops,
+          delay,
+          price,
+          deep_link
+        }))
+      }
+    })
   })
 
   const priceIndicatorText = $("span.gOatQ").text().trim().toLowerCase()
@@ -240,7 +257,7 @@ export const ScraperProductionLive: Layer.Layer<ScraperService, never, CacheServ
           // Defaults
           const seatClass: SeatClass = seat || "economy"
           const passengerCounts: Passengers = passengers || { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }
-          const curr = currency || ""
+          const curr = currency || "USD"
 
           // Check cache
           const cacheKey = createCacheKey(
