@@ -5,4 +5,3 @@ dist/
 tmp/
 docs/
 .vercel
-api/index.mjs
