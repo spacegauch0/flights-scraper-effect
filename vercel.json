@@ -7,10 +7,9 @@
     }
   ],
   "functions": {
-    "api/index.ts": {
+    "api/index.mjs": {
       "maxDuration": 60,
-      "memory": 1024,
-      "includeFiles": "src/**/*.ts"
+      "memory": 1024
     }
   }
 }

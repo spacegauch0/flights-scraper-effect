@@ -6,12 +6,12 @@
 import { Hono } from "hono"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "@effect/platform"
-import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services/index.js"
-import { ScraperError } from "../domain/errors.js"
-import { TripTypeSchema, SeatClassSchema, SortOptionSchema } from "../domain/index.js"
+import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
+import { ScraperError } from "../domain/errors"
+import { TripTypeSchema, SeatClassSchema, SortOptionSchema } from "../domain"
 import { Schema } from "@effect/schema"
-import { CacheService, CacheLive, createCacheKey, defaultCacheConfig } from "../utils/cache.js"
-import { RateLimiterService, RateLimiterLive, defaultRateLimiterConfig } from "../utils/rate-limiter.js"
+import { CacheService, CacheLive, createCacheKey, defaultCacheConfig } from "../utils/cache"
+import { RateLimiterService, RateLimiterLive, defaultRateLimiterConfig } from "../utils/rate-limiter"
 
 /**
  * API Error for authentication failures

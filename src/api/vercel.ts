@@ -1,7 +1,9 @@
 /**
  * Vercel Serverless Function Entry Point
- * This file is used for Vercel deployment
+ * This file is bundled by esbuild into api/index.mjs for Vercel deployment
  */
+
+import { createServerlessHandler } from "./server-hono"
 
 // Load environment variables
 const API_KEY = process.env.API_KEY
@@ -14,16 +16,14 @@ if (!API_KEY) {
 let handler: ((req: Request) => Promise<Response>) | null = null
 
 export default async function vercelHandler(req: Request): Promise<Response> {
-  // Initialize handler on first request using dynamic import
+  // Initialize handler on first request
   if (!handler) {
-    console.log(`📡 Initializing REST API server for Vercel...`)
-    console.log(`   API Key: ${API_KEY.substring(0, 8)}...`)
+    console.log(`Initializing REST API server for Vercel...`)
+    console.log(`API Key: ${API_KEY.substring(0, 8)}...`)
 
-    // Use dynamic import to avoid static analysis issues with Vercel
-    const { createServerlessHandler } = await import("../src/api/server-hono.js")
     handler = await createServerlessHandler(API_KEY)
-    
-    console.log(`✅ Server initialized`)
+
+    console.log(`Server initialized`)
   }
 
   // Use the handler
