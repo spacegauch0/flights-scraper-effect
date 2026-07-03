@@ -2,11 +2,11 @@
  * Custom error types for scraper operations
  */
 
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 
 /** Custom Error Type for scraper operations */
-export class ScraperError extends Schema.TaggedError<ScraperError>()("ScraperError", {
-  reason: Schema.Literal("NavigationFailed", "Timeout", "ParsingError", "Unknown", "InvalidInput", "RateLimitExceeded"),
+export class ScraperError extends Schema.TaggedErrorClass<ScraperError>()("ScraperError", {
+  reason: Schema.Literals(["NavigationFailed", "Timeout", "ParsingError", "Unknown", "InvalidInput", "RateLimitExceeded"]),
   message: Schema.String
 }) {}
 

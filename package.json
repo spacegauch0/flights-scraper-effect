@@ -11,12 +11,10 @@
     "production": "bun run src/cli.ts --production"
   },
   "dependencies": {
-    "@effect/platform": "^0.94.1",
-    "@effect/platform-node": "^0.104.0",
-    "@effect/schema": "^0.75.5",
+    "@effect/platform-node": "4.0.0-beta.93",
     "@opentui/core": "^0.1.70",
     "cheerio": "^1.1.2",
-    "effect": "^3.19.14",
+    "effect": "4.0.0-beta.93",
     "protobufjs": "^8.0.0",
     "puppeteer": "^24.34.0"
   },

@@ -2,7 +2,7 @@
  * Response caching for flight search results
  */
 
-import { Effect, Layer, Context, Ref } from "effect"
+import { Effect, Layer, Context, Ref, Clock } from "effect"
 import { Result } from "../domain"
 
 /**
@@ -34,14 +34,12 @@ export const defaultCacheConfig: CacheConfig = {
 /**
  * Cache service interface
  */
-export interface CacheService {
+export class CacheService extends Context.Service<CacheService, {
   readonly get: (key: string) => Effect.Effect<Result | null>
   readonly set: (key: string, value: Result) => Effect.Effect<void>
   readonly clear: () => Effect.Effect<void>
   readonly size: () => Effect.Effect<number>
-}
-
-export const CacheService = Context.GenericTag<CacheService>("CacheService")
+}>()("CacheService") {}
 
 /**
  * Creates a cache key from search parameters
@@ -96,7 +94,7 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
             }
 
             // Check if entry is expired
-            const now = Date.now()
+            const now = yield* Clock.currentTimeMillis
             if (now - entry.timestamp > ttl) {
               // Remove expired entry
               yield* Ref.update(cacheRef, (cache) => {
@@ -111,7 +109,7 @@ export const CacheLive = (config: CacheConfig = defaultCacheConfig) =>
 
         set: (key: string, value: Result) =>
           Effect.gen(function* () {
-            const now = Date.now()
+            const now = yield* Clock.currentTimeMillis
 
             yield* Ref.update(cacheRef, (cache) => {
               // Remove oldest entry if cache is full

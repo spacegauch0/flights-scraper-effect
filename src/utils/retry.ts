@@ -43,9 +43,7 @@ export const createRetrySchedule = (config: RetryConfig = defaultRetryConfig) =>
   return Schedule.exponential(Duration.millis(initialDelay), backoffFactor)
     .pipe(
       Schedule.either(Schedule.spaced(Duration.millis(maxDelay))),
-      Schedule.compose(Schedule.elapsed),
-      Schedule.whileOutput(Duration.lessThanOrEqualTo(Duration.millis(maxDelay))),
-      Schedule.intersect(Schedule.recurs(maxAttempts - 1))
+      Schedule.bothLeft(Schedule.recurs(maxAttempts - 1))
     )
 }
 
@@ -70,9 +68,7 @@ export const withRetry = <A, E extends ScraperError, R>(
   return effect.pipe(
     Effect.retry({
       schedule: policy,
-      while: (error: unknown): error is E => {
-        return error instanceof ScraperError && isRetryableError(error)
-      }
+      while: (error: E) => isRetryableError(error)
     })
   )
 }
@@ -86,16 +82,14 @@ export const withRetryAndLog = <A, E extends ScraperError, R>(
   config: RetryConfig = defaultRetryConfig
 ): Effect.Effect<A, E, R> => {
   const policy = createRetrySchedule(config)
-  
+
   return effect.pipe(
     Effect.tapError((error: E) =>
       Effect.log(`⚠️  ${operationName} failed: ${error.message}. Retrying...`)
     ),
     Effect.retry({
       schedule: policy,
-      while: (error: unknown): error is E => {
-        return error instanceof ScraperError && isRetryableError(error)
-      }
+      while: (error: E) => isRetryableError(error)
     }),
     Effect.tapError((error: E) =>
       Effect.log(`❌ ${operationName} failed after all retries: ${error.message}`)

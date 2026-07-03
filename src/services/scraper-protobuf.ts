@@ -3,8 +3,8 @@
  * Inspired by: https://github.com/AWeirdDev/flights
  */
 
-import { Effect, Layer, Console, Context } from "effect"
-import { HttpClient } from "@effect/platform"
+import { Effect, Layer, Console } from "effect"
+import { HttpClient } from "effect/unstable/http"
 import { FlightOption, ScraperError, Result, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
 import { ScraperService } from "./scraper"
 import { encodeFlightSearch, FlightData as ProtobufFlightData } from "../utils/protobuf"
@@ -275,7 +275,7 @@ const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters)
  * Creates the ScraperService implementation using Protobuf encoding
  * Requires HttpClient to be provided via Layer
  */
-export const ScraperProtobufLive: Layer.Layer<ScraperService, never, HttpClient.HttpClient> = Layer.effect(
+export const ScraperProtobufLive = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
     // HttpClient is available from Layer context

@@ -11,9 +11,10 @@ import {
   SelectRenderable,
   SelectRenderableEvents,
   InputRenderableEvents,
+  type Renderable,
 } from "@opentui/core"
 import { Effect, Exit, Layer } from "effect"
-import { FetchHttpClient } from "@effect/platform"
+import { FetchHttpClient } from "effect/unstable/http"
 import { exec } from "child_process"
 import { ScraperService, ScraperProtobufLive } from "../services"
 import { encodeFlightSearch } from "../utils"
@@ -63,7 +64,7 @@ async function buildGoogleFlightsUrl(
         if (currency) params.set("curr", currency)
         return `https://www.google.com/travel/flights?${params.toString()}`
       }),
-      Effect.catchAll(() => {
+      Effect.catch(() => {
         // Fallback to simple query URL if encoding fails
         let searchQuery = `Flights from ${origin} to ${destination} on ${departDate}`
         if (tripType === "round-trip" && returnDate) {
@@ -471,7 +472,7 @@ export async function runTui() {
       const departInputIndex = children.findIndex(c => c.id === departInput.id)
       if (departInputIndex !== -1) {
         // Remove all elements after departure date input, add return date, then re-add the rest
-        const elementsAfterDepartDate: any[] = []
+        const elementsAfterDepartDate: Renderable[] = []
         for (let i = departInputIndex + 1; i < children.length; i++) {
           const child = children[i]
           elementsAfterDepartDate.push(child)
@@ -512,7 +513,7 @@ export async function runTui() {
     const children = formFields.getChildren()
     const departInputIndex = children.findIndex(c => c.id === departInput.id)
     if (departInputIndex !== -1) {
-      const elementsAfterDepartDate: any[] = []
+      const elementsAfterDepartDate: Renderable[] = []
       for (let i = departInputIndex + 1; i < children.length; i++) {
         const child = children[i]
         elementsAfterDepartDate.push(child)
@@ -874,7 +875,7 @@ export async function runTui() {
     const exit = await Effect.runPromiseExit(
       program.pipe(
         Effect.provide(AppLive),
-        Effect.tapErrorCause((cause) => 
+        Effect.tapCause((cause) => 
           Effect.sync(() => {
             clearChildren(resultsContainer)
             const errorText = new TextRenderable(renderer, {

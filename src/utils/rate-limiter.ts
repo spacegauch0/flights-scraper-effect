@@ -2,7 +2,7 @@
  * Rate limiting to prevent excessive requests to Google Flights
  */
 
-import { Effect, Layer, Context, Ref, Duration } from "effect"
+import { Effect, Layer, Context, Ref, Duration, Clock } from "effect"
 import { ScraperError } from "../domain"
 
 /**
@@ -37,13 +37,11 @@ interface RequestRecord {
 /**
  * Rate limiter service interface
  */
-export interface RateLimiterService {
+export class RateLimiterService extends Context.Service<RateLimiterService, {
   readonly acquire: () => Effect.Effect<void, ScraperError>
   readonly reset: () => Effect.Effect<void>
   readonly getStats: () => Effect.Effect<{ requests: number; windowMs: number }>
-}
-
-export const RateLimiterService = Context.GenericTag<RateLimiterService>("RateLimiterService")
+}>()("RateLimiterService") {}
 
 /**
  * In-memory rate limiter implementation using sliding window
@@ -61,8 +59,8 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
       return RateLimiterService.of({
         acquire: () =>
           Effect.gen(function* () {
-            const now = Date.now()
-            
+            const now = yield* Clock.currentTimeMillis
+
             // Get current requests within the window
             const requests = yield* Ref.get(requestsRef)
             const windowStart = now - windowMs
@@ -89,12 +87,13 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
             }
 
             // Update request history
+            const updatedAt = yield* Clock.currentTimeMillis
             yield* Ref.update(requestsRef, () => [
               ...recentRequests,
-              { timestamp: Date.now() }
+              { timestamp: updatedAt }
             ])
-            
-            yield* Ref.set(lastRequestRef, Date.now())
+
+            yield* Ref.set(lastRequestRef, updatedAt)
           }),
 
         reset: () =>
@@ -106,7 +105,7 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
         getStats: () =>
           Effect.gen(function* () {
             const requests = yield* Ref.get(requestsRef)
-            const now = Date.now()
+            const now = yield* Clock.currentTimeMillis
             const windowStart = now - windowMs
             const recentRequests = requests.filter(r => r.timestamp > windowStart)
 

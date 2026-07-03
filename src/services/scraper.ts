@@ -9,7 +9,7 @@ import { Result, ScraperError, SortOption, FlightFilters, TripType, SeatClass, P
 /**
  * Service Definition for flight scraping operations
  */
-export interface ScraperService {
+export class ScraperService extends Context.Service<ScraperService, {
   readonly scrape: (
     from: string,
     to: string,
@@ -22,7 +22,4 @@ export interface ScraperService {
     passengers?: Passengers,
     currency?: string
   ) => Effect.Effect<Result, ScraperError>
-}
-
-export const ScraperService = Context.GenericTag<ScraperService>("ScraperService")
-
+}>()("ScraperService") {}

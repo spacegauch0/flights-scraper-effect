@@ -4,11 +4,10 @@
  */
 
 import { Effect, Console, Layer } from "effect"
-import { FetchHttpClient } from "@effect/platform"
+import { FetchHttpClient } from "effect/unstable/http"
 import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
 import { CacheLive, RateLimiterLive, defaultCacheConfig, defaultRateLimiterConfig } from "../utils"
-import type { TripType, SeatClass, Passengers, FlightFilters, SortOption } from "../domain"
-import { Schema } from "@effect/schema"
+import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "../domain"
 
 /**
  * CLI Arguments interface
@@ -217,7 +216,7 @@ Examples:
 /**
  * Formats flight results for display
  */
-function formatFlight(flight: any, index: number): string {
+function formatFlight(flight: FlightOption, index: number): string {
   const bestBadge = flight.is_best ? "⭐ " : ""
   const departureArrival = flight.departure && flight.arrival 
     ? `${flight.departure} → ${flight.arrival}` 

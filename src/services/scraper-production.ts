@@ -3,7 +3,7 @@
  */
 
 import { Effect, Layer, Console } from "effect"
-import { HttpClient } from "@effect/platform"
+import { HttpClient } from "effect/unstable/http"
 import { ScraperService } from "./scraper"
 import { FlightOption, ScraperError, ScraperErrors, Result, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
 import { encodeFlightSearch, FlightData as ProtobufFlightData } from "../utils/protobuf"
@@ -222,7 +222,7 @@ const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters)
  * Production-ready scraper implementation with caching, rate limiting, and retry
  * Requires CacheService, RateLimiterService, and HttpClient to be provided via Layer
  */
-export const ScraperProductionLive: Layer.Layer<ScraperService, never, CacheService | RateLimiterService | HttpClient.HttpClient> = Layer.effect(
+export const ScraperProductionLive = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
     const cache = yield* CacheService
