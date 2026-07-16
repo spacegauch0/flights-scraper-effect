@@ -100,15 +100,18 @@ export function getVisualWidth(str: string): number {
   for (const char of str) {
     const code = char.codePointAt(0) || 0
     // Emoji and wide characters typically take 2 columns in terminal
-    if (code >= 0x1F000 || // Emoji and symbols (1F000+)
-        (code >= 0x2300 && code <= 0x23FF) || // Misc technical
-        (code >= 0x2600 && code <= 0x27BF) || // Misc symbols
-        (code >= 0x2B00 && code <= 0x2BFF) || // Misc symbols and arrows (includes ⭐ U+2B50)
-        (code >= 0x2900 && code <= 0x297F) || // Supplemental arrows
-        (code >= 0x1100 && code <= 0x11FF) || // Korean Jamo
-        (code >= 0x3000 && code <= 0x9FFF) || // CJK
-        (code >= 0xAC00 && code <= 0xD7AF) || // Korean Hangul
-        (code >= 0xFE00 && code <= 0xFE0F)) { // Variation selectors
+    if (
+      code >= 0x1f000 || // Emoji and symbols (1F000+)
+      (code >= 0x2300 && code <= 0x23ff) || // Misc technical
+      (code >= 0x2600 && code <= 0x27bf) || // Misc symbols
+      (code >= 0x2b00 && code <= 0x2bff) || // Misc symbols and arrows (includes ⭐ U+2B50)
+      (code >= 0x2900 && code <= 0x297f) || // Supplemental arrows
+      (code >= 0x1100 && code <= 0x11ff) || // Korean Jamo
+      (code >= 0x3000 && code <= 0x9fff) || // CJK
+      (code >= 0xac00 && code <= 0xd7af) || // Korean Hangul
+      (code >= 0xfe00 && code <= 0xfe0f)
+    ) {
+      // Variation selectors
       width += 2
     } else {
       width += 1

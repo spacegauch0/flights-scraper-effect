@@ -26,8 +26,19 @@
 
 import { Effect } from "effect"
 import {
-  AirportCode, DateString, FlightLeg, FlightOption, Passengers, Result, ScraperErrors, SeatClass,
-  formatClock12, formatDesignator, formatDurationHrMin, parsePrice, type FlightDesignator
+  AirportCode,
+  DateString,
+  FlightLeg,
+  FlightOption,
+  Passengers,
+  Result,
+  ScraperErrors,
+  SeatClass,
+  formatClock12,
+  formatDesignator,
+  formatDurationHrMin,
+  parsePrice,
+  type FlightDesignator,
 } from "../domain"
 import { buildFlightUrl } from "../utils/protobuf"
 import { callFlightsRpc, extractRpcSession, type RpcSession } from "./google-rpc"
@@ -91,21 +102,23 @@ interface PickerSession {
   readonly legIndex: number
 }
 
-const formatTime = (hm: unknown): string =>
-  Array.isArray(hm) && typeof hm[0] === "number" ? formatClock12(hm[0], typeof hm[1] === "number" ? hm[1] : 0) : ""
+const formatTime = (hm: unknown): string => (Array.isArray(hm) && typeof hm[0] === "number" ? formatClock12(hm[0], typeof hm[1] === "number" ? hm[1] : 0) : "")
 
-const formatDuration = (minutes: unknown): string =>
-  typeof minutes === "number" ? formatDurationHrMin(minutes) : "N/A"
+const formatDuration = (minutes: unknown): string => (typeof minutes === "number" ? formatDurationHrMin(minutes) : "N/A")
 
 /** A "provider entry" is one bookable flight: [[code, names, flights], [[null, price], token], ...] */
 const isProviderEntry = (value: unknown): value is [[string, string[], unknown[]], [[null, number], string], ...unknown[]] =>
   Array.isArray(value) &&
-  Array.isArray(value[0]) && typeof value[0][0] === "string" && Array.isArray(value[0][1]) && Array.isArray(value[0][2]) &&
-  Array.isArray(value[1]) && Array.isArray(value[1][0]) && typeof value[1][1] === "string"
+  Array.isArray(value[0]) &&
+  typeof value[0][0] === "string" &&
+  Array.isArray(value[0][1]) &&
+  Array.isArray(value[0][2]) &&
+  Array.isArray(value[1]) &&
+  Array.isArray(value[1][0]) &&
+  typeof value[1][1] === "string"
 
 /** A "provider group" is the list of bookable flights (and null placeholders) shown for one leg */
-const isProviderGroup = (value: unknown): value is unknown[] =>
-  Array.isArray(value) && value.length > 0 && value.every((entry) => entry === null || isProviderEntry(entry))
+const isProviderGroup = (value: unknown): value is unknown[] => Array.isArray(value) && value.length > 0 && value.every((entry) => entry === null || isProviderEntry(entry))
 
 /** Finds every provider group in the response whose flights match this leg's endpoints */
 const findProviderGroupsForLeg = (node: unknown, from: string, to: string, into: unknown[][]): void => {
@@ -149,28 +162,57 @@ const candidateFromProviderEntry = (entry: unknown): MultiCityLegOption | undefi
       duration: formatDuration(flight[11]),
       stops: 0, // Approximation: connecting itineraries aren't modeled in this path yet
       price: price !== undefined ? `$${price}` : "N/A",
-      flight_number: formatDesignator(designator)
+      flight_number: formatDesignator(designator),
     }),
     token,
-    designator
+    designator,
   }
 }
 
 const buildLegTuple = (leg: FlightLeg, selection: FlightDesignator | undefined): unknown[] => [
-  [[[leg.from, 0]]], [[[leg.to, 0]]], null, 0, null, null, leg.date,
+  [[[leg.from, 0]]],
+  [[[leg.to, 0]]],
+  null,
+  0,
+  null,
+  null,
+  leg.date,
   null,
   selection ? [[leg.from, leg.date, leg.to, null, selection.carrier, selection.number]] : null,
-  null, null, null, null, null, 3
+  null,
+  null,
+  null,
+  null,
+  null,
+  3,
 ]
 
 const buildShoppingPayload = (session: PickerSession): unknown => [
   session.sessionSlot,
-  [null, null, 3, null, [], 1,
+  [
+    null,
+    null,
+    3,
+    null,
+    [],
+    1,
     [session.passengers.adults, session.passengers.children, session.passengers.infants_in_seat, session.passengers.infants_on_lap],
-    null, null, null, null, null, null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
     session.legs.map((leg, i) => buildLegTuple(leg, session.selections[i])),
-    null, null, null, 1],
-  0, 0, 0, 1
+    null,
+    null,
+    null,
+    1,
+  ],
+  0,
+  0,
+  0,
+  1,
 ]
 
 /**
@@ -193,21 +235,14 @@ const fetchLegOptions = Effect.fn("MultiCity.fetchLegOptions")(function* (sessio
       findProviderGroupsForLeg(block, leg.from, leg.to, groups)
     }
 
-    return groups
-      .flatMap((group) => group.map(candidateFromProviderEntry))
-      .filter((candidate): candidate is MultiCityLegOption => candidate !== undefined)
+    return groups.flatMap((group) => group.map(candidateFromProviderEntry)).filter((candidate): candidate is MultiCityLegOption => candidate !== undefined)
   })
 
-  return yield* attemptFetch.pipe(
-    Effect.repeat({ until: (candidates) => candidates.length > 0, times: 2 })
-  )
+  return yield* attemptFetch.pipe(Effect.repeat({ until: (candidates) => candidates.length > 0, times: 2 }))
 })
 
 /** Builds the step callers see for the session's current leg */
-const stepForSession = Effect.fn("MultiCity.step")(function* (
-  session: PickerSession,
-  chosen: readonly ItineraryLeg[]
-) {
+const stepForSession = Effect.fn("MultiCity.step")(function* (session: PickerSession, chosen: readonly ItineraryLeg[]) {
   if (session.legIndex >= session.legs.length) {
     const complete: MultiCityStep = { _tag: "Complete", itinerary: chosen }
     return complete
@@ -216,9 +251,7 @@ const stepForSession = Effect.fn("MultiCity.step")(function* (
   const leg = session.legs[session.legIndex]
   const options = yield* fetchLegOptions(session)
   if (options.length === 0) {
-    return yield* Effect.fail(
-      ScraperErrors.parsingError(`No flights found for leg ${session.legIndex + 1} (${leg.from} -> ${leg.to})`)
-    )
+    return yield* Effect.fail(ScraperErrors.parsingError(`No flights found for leg ${session.legIndex + 1} (${leg.from} -> ${leg.to})`))
   }
 
   const step: MultiCityStep = {
@@ -245,7 +278,7 @@ export const startMultiCityPicker = Effect.fn("MultiCity.start")(function* (para
     "multi-city",
     params.seat,
     params.passengers,
-    params.currency ?? ""
+    params.currency ?? "",
   )
 
   const html = yield* fetchSearchPage(searchUrl)
@@ -272,10 +305,7 @@ export const startMultiCityPicker = Effect.fn("MultiCity.start")(function* (para
  * Records the chosen option for the step's leg and advances: either the
  * next leg's options, or the completed itinerary.
  */
-export const chooseMultiCityOption = Effect.fn("MultiCity.choose")(function* (
-  step: PickLeg,
-  option: MultiCityLegOption
-) {
+export const chooseMultiCityOption = Effect.fn("MultiCity.choose")(function* (step: PickLeg, option: MultiCityLegOption) {
   const session = step.session
   const next: PickerSession = {
     ...session,
@@ -296,9 +326,7 @@ export const fetchMultiCityItinerary = Effect.fn("MultiCity.fetchItinerary")(fun
 
   while (step._tag === "PickLeg") {
     const current = step
-    const cheapest = current.options.reduce((best, candidate) =>
-      parsePrice(candidate.flight.price) < parsePrice(best.flight.price) ? candidate : best
-    )
+    const cheapest = current.options.reduce((best, candidate) => (parsePrice(candidate.flight.price) < parsePrice(best.flight.price) ? candidate : best))
     step = yield* chooseMultiCityOption(current, cheapest)
   }
 

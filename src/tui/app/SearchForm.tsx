@@ -40,11 +40,16 @@ const selectColors = {
 
 /** Field label, flush with its control; focus is shown by color alone */
 const Label = ({ text, active }: { readonly text: string; readonly active: boolean }) => (
-  <text wrapMode="none" fg={active ? colors.accent : colors.muted}>{text}</text>
+  <text wrapMode="none" fg={active ? colors.accent : colors.muted}>
+    {text}
+  </text>
 )
 
 const PassengerField = ({
-  label, value, focused, onInput,
+  label,
+  value,
+  focused,
+  onInput,
 }: {
   readonly label: string
   readonly value: number
@@ -52,7 +57,9 @@ const PassengerField = ({
   readonly onInput: (value: string) => void
 }) => (
   <box width={6} flexDirection="column">
-    <text wrapMode="none" fg={focused ? colors.accent : colors.muted}>{label}</text>
+    <text wrapMode="none" fg={focused ? colors.accent : colors.muted}>
+      {label}
+    </text>
     <input width={5} value={String(value)} maxLength={2} focused={focused} onInput={onInput} {...inputColors} />
   </box>
 )
@@ -87,7 +94,10 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
           <Label text="Route" active={routeActive} />
           <box width="100%" flexDirection="row">
             <input
-              width={6} value={form.origin} placeholder="JFK" maxLength={3}
+              width={6}
+              value={form.origin}
+              placeholder="JFK"
+              maxLength={3}
               focused={focusId === "origin"}
               onInput={(value) => actions.patchForm({ origin: value.toUpperCase() })}
               {...inputColors}
@@ -96,7 +106,10 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
               <text fg={colors.accent}>{"→"}</text>
             </box>
             <input
-              width={6} value={form.destination} placeholder="LHR" maxLength={3}
+              width={6}
+              value={form.destination}
+              placeholder="LHR"
+              maxLength={3}
               focused={focusId === "destination"}
               onInput={(value) => actions.patchForm({ destination: value.toUpperCase() })}
               {...inputColors}
@@ -107,11 +120,14 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
         <box width="100%" flexDirection="column">
           <Label text="Trip" active={focusId === "tripType"} />
           <select
-            width="100%" height={3}
+            width="100%"
+            height={3}
             options={TRIP_OPTIONS}
             selectedIndex={Math.max(0, TRIP_VALUES.indexOf(form.tripType))}
             focused={focusId === "tripType"}
-            onChange={(_, option) => { if (option) actions.setTripType(option.value as TripType) }}
+            onChange={(_, option) => {
+              if (option) actions.setTripType(option.value as TripType)
+            }}
             showDescription={false}
             wrapSelection
             {...selectColors}
@@ -121,7 +137,10 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
         <box width="100%" flexDirection="column">
           <Label text="Depart" active={focusId === "departDate"} />
           <input
-            width={13} value={form.departDate} placeholder="YYYY-MM-DD" maxLength={10}
+            width={13}
+            value={form.departDate}
+            placeholder="YYYY-MM-DD"
+            maxLength={10}
             focused={focusId === "departDate"}
             onInput={(value) => actions.patchForm({ departDate: value })}
             {...inputColors}
@@ -132,7 +151,10 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
           <box width="100%" flexDirection="column">
             <Label text="Return" active={focusId === "returnDate"} />
             <input
-              width={13} value={form.returnDate} placeholder="YYYY-MM-DD" maxLength={10}
+              width={13}
+              value={form.returnDate}
+              placeholder="YYYY-MM-DD"
+              maxLength={10}
               focused={focusId === "returnDate"}
               onInput={(value) => actions.patchForm({ returnDate: value })}
               {...inputColors}
@@ -148,19 +170,28 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
                   <Label text={`Leg ${index + 2}`} active={legActive} />
                   <box width="100%" flexDirection="row" gap={1}>
                     <input
-                      width={6} value={leg.from} placeholder="JFK" maxLength={3}
+                      width={6}
+                      value={leg.from}
+                      placeholder="JFK"
+                      maxLength={3}
                       focused={focusId === `leg-${index}-from`}
                       onInput={(value) => actions.patchLeg(index, { from: value.toUpperCase() })}
                       {...inputColors}
                     />
                     <input
-                      width={6} value={leg.to} placeholder="LHR" maxLength={3}
+                      width={6}
+                      value={leg.to}
+                      placeholder="LHR"
+                      maxLength={3}
                       focused={focusId === `leg-${index}-to`}
                       onInput={(value) => actions.patchLeg(index, { to: value.toUpperCase() })}
                       {...inputColors}
                     />
                     <input
-                      width={13} value={leg.date} placeholder="YYYY-MM-DD" maxLength={10}
+                      width={13}
+                      value={leg.date}
+                      placeholder="YYYY-MM-DD"
+                      maxLength={10}
                       focused={focusId === `leg-${index}-date`}
                       onInput={(value) => actions.patchLeg(index, { date: value })}
                       {...inputColors}
@@ -174,11 +205,14 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
         <box width="100%" flexDirection="column">
           <Label text="Cabin" active={focusId === "seatClass"} />
           <select
-            width="100%" height={4}
+            width="100%"
+            height={4}
             options={SEAT_OPTIONS}
             selectedIndex={Math.max(0, SEAT_VALUES.indexOf(form.seatClass))}
             focused={focusId === "seatClass"}
-            onChange={(_, option) => { if (option) actions.patchForm({ seatClass: option.value as SeatClass }) }}
+            onChange={(_, option) => {
+              if (option) actions.patchForm({ seatClass: option.value as SeatClass })
+            }}
             showDescription={false}
             wrapSelection
             {...selectColors}
@@ -186,25 +220,30 @@ export const SearchForm = ({ shell }: { readonly shell: AppShell }) => {
         </box>
 
         <box width="100%" flexDirection="column">
-          <Label
-            text="Travelers"
-            active={focusId === "adults" || focusId === "children" || focusId === "infantsSeat" || focusId === "infantsLap"}
-          />
+          <Label text="Travelers" active={focusId === "adults" || focusId === "children" || focusId === "infantsSeat" || focusId === "infantsLap"} />
           <box width="100%" flexDirection="row" gap={1}>
             <PassengerField
-              label="Adult" value={form.passengers.adults} focused={focusId === "adults"}
+              label="Adult"
+              value={form.passengers.adults}
+              focused={focusId === "adults"}
               onInput={(value) => actions.patchForm({ passengers: { ...form.passengers, adults: parseCount(value, 1) } })}
             />
             <PassengerField
-              label="Child" value={form.passengers.children} focused={focusId === "children"}
+              label="Child"
+              value={form.passengers.children}
+              focused={focusId === "children"}
               onInput={(value) => actions.patchForm({ passengers: { ...form.passengers, children: parseCount(value, 0) } })}
             />
             <PassengerField
-              label="Inf-S" value={form.passengers.infants_in_seat} focused={focusId === "infantsSeat"}
+              label="Inf-S"
+              value={form.passengers.infants_in_seat}
+              focused={focusId === "infantsSeat"}
               onInput={(value) => actions.patchForm({ passengers: { ...form.passengers, infants_in_seat: parseCount(value, 0) } })}
             />
             <PassengerField
-              label="Inf-L" value={form.passengers.infants_on_lap} focused={focusId === "infantsLap"}
+              label="Inf-L"
+              value={form.passengers.infants_on_lap}
+              focused={focusId === "infantsLap"}
               onInput={(value) => actions.patchForm({ passengers: { ...form.passengers, infants_on_lap: parseCount(value, 0) } })}
             />
           </box>

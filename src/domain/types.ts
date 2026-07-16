@@ -17,71 +17,66 @@ export const PassengersSchema = Schema.Struct({
   adults: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
   children: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
   infants_in_seat: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-  infants_on_lap: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+  infants_on_lap: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
 })
 export interface Passengers extends Schema.Schema.Type<typeof PassengersSchema> {}
 
 /** Airport code schema (3-letter IATA codes) */
-export const AirportCodeSchema = Schema.String.check(
-  Schema.isLengthBetween(3, 3),
-  Schema.isPattern(/^[A-Z]{3}$/)
-).pipe(Schema.brand("AirportCode"))
+export const AirportCodeSchema = Schema.String.check(Schema.isLengthBetween(3, 3), Schema.isPattern(/^[A-Z]{3}$/)).pipe(Schema.brand("AirportCode"))
 export type AirportCode = Schema.Schema.Type<typeof AirportCodeSchema>
 
 /** Date schema (YYYY-MM-DD format) */
-export const DateStringSchema = Schema.String.check(
-  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)
-).pipe(Schema.brand("DateString"))
+export const DateStringSchema = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)).pipe(Schema.brand("DateString"))
 export type DateString = Schema.Schema.Type<typeof DateStringSchema>
 
 /** A single origin/destination/date leg beyond the first, used for multi-city itineraries */
 export const FlightLegSchema = Schema.Struct({
   from: AirportCodeSchema,
   to: AirportCodeSchema,
-  date: DateStringSchema
+  date: DateStringSchema,
 })
 export interface FlightLeg extends Schema.Schema.Type<typeof FlightLegSchema> {}
 
 /** Defines the sorting options for flight results */
 export const SortOptionSchema = Schema.Literals([
-  "price-asc",      // Price: low to high
-  "price-desc",     // Price: high to low
-  "duration-asc",   // Duration: shortest to longest
-  "duration-desc",  // Duration: longest to shortest
-  "airline",        // Airline: alphabetical
-  "none"            // No sorting (default order)
+  "price-asc", // Price: low to high
+  "price-desc", // Price: high to low
+  "duration-asc", // Duration: shortest to longest
+  "duration-desc", // Duration: longest to shortest
+  "airline", // Airline: alphabetical
+  "none", // No sorting (default order)
 ])
 export type SortOption = Schema.Schema.Type<typeof SortOptionSchema>
 
 /** Defines what the clean, desired output looks like */
 export const FlightOption = Schema.Struct({
   is_best: Schema.optional(Schema.Boolean),
-  name: Schema.String,         // Airline name(s)
-  departure: Schema.String,    // Departure time
-  arrival: Schema.String,      // Arrival time
+  name: Schema.String, // Airline name(s)
+  departure: Schema.String, // Departure time
+  arrival: Schema.String, // Arrival time
   arrival_time_ahead: Schema.optional(Schema.String), // "+1 day" if arrives next day
-  duration: Schema.String,     // Flight duration
-  stops: Schema.Number,        // Number of stops
+  duration: Schema.String, // Flight duration
+  stops: Schema.Number, // Number of stops
   delay: Schema.optional(Schema.String), // Delay information if any
-  price: Schema.String,        // Price as formatted string
+  price: Schema.String, // Price as formatted string
   deep_link: Schema.optional(Schema.String), // Direct booking/details link
-  flight_number: Schema.optional(Schema.String) // Marketing carrier + number, e.g. "BA178" - used to look up booking options
+  flight_number: Schema.optional(Schema.String), // Marketing carrier + number, e.g. "BA178" - used to look up booking options
 })
 export interface FlightOption extends Schema.Schema.Type<typeof FlightOption> {}
 
 /** A single "Book with X" option from Google Flights' booking-options panel */
 export const BookingOption = Schema.Struct({
-  providerCode: Schema.String,     // e.g. "FR", "BOOKING_COM"
-  provider: Schema.String,         // e.g. "Ryanair", "Booking.com"
+  providerCode: Schema.String, // e.g. "FR", "BOOKING_COM"
+  provider: Schema.String, // e.g. "Ryanair", "Booking.com"
   price: Schema.optional(Schema.String), // Formatted price for this provider, if Google returned one
-  url: Schema.String               // google.com/travel/clk/f redirect that lands on the provider's booking page
+  url: Schema.String, // google.com/travel/clk/f redirect that lands on the provider's booking page
 })
 export interface BookingOption extends Schema.Schema.Type<typeof BookingOption> {}
 
 /** Result with price indicator and flights */
 export const Result = Schema.Struct({
   current_price: Schema.optional(Schema.Literals(["low", "typical", "high"])),
-  flights: Schema.Array(FlightOption)
+  flights: Schema.Array(FlightOption),
 })
 export interface Result extends Schema.Schema.Type<typeof Result> {}
 
@@ -109,7 +104,7 @@ export const FlightFiltersSchema = Schema.Struct({
    * Maximum number of results to return. Applied after filtering and sorting.
    * Use "all" to automatically load all results by clicking "View more flights".
    */
-  limit: Schema.optionalKey(Schema.Union([Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), Schema.Literal("all")]))
+  limit: Schema.optionalKey(Schema.Union([Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), Schema.Literal("all")])),
 })
 export interface FlightFilters extends Schema.Schema.Type<typeof FlightFiltersSchema> {}
 
@@ -131,6 +126,6 @@ export const ScrapeRequestSchema = Schema.Struct({
   passengers: PassengersSchema,
   currency: Schema.optionalKey(Schema.String),
   /** Legs 2+ beyond from/to/departDate, used when tripType is "multi-city" */
-  additionalLegs: Schema.optionalKey(Schema.Array(FlightLegSchema))
+  additionalLegs: Schema.optionalKey(Schema.Array(FlightLegSchema)),
 })
 export interface ScrapeRequest extends Schema.Schema.Type<typeof ScrapeRequestSchema> {}

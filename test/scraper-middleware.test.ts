@@ -13,8 +13,13 @@ import { RateLimiterDisabled, RateLimiterLive } from "../src/utils/rate-limiter"
 
 const request = (overrides: Record<string, unknown> = {}): ScrapeRequest =>
   Schema.decodeUnknownSync(ScrapeRequestSchema)({
-    from: "JFK", to: "LHR", departDate: "2026-08-20", tripType: "one-way",
-    sortOption: "price-asc", filters: { limit: 10 }, seat: "economy",
+    from: "JFK",
+    to: "LHR",
+    departDate: "2026-08-20",
+    tripType: "one-way",
+    sortOption: "price-asc",
+    filters: { limit: 10 },
+    seat: "economy",
     passengers: { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
     ...overrides,
   })
@@ -34,57 +39,69 @@ const countingInner = () => {
       scrape: () =>
         Effect.sync(() => {
           calls += 1
-        }).pipe(Effect.as(Result.make({ current_price: "typical", flights: FLIGHTS })))
-    })
+        }).pipe(Effect.as(Result.make({ current_price: "typical", flights: FLIGHTS }))),
+    }),
   )
   return { layer, calls: () => calls }
 }
 
 const run = <A>(inner: Layer.Layer<ScraperService>, rateLimiter: Layer.Layer<never, never, never> | typeof RateLimiterDisabled, body: Effect.Effect<A, unknown, ScraperService>) =>
-  Effect.runPromise(
-    body.pipe(
-      Effect.provide(ScraperCacheMiddleware.pipe(Layer.provide(inner), Layer.provide(rateLimiter)))
-    ) as Effect.Effect<A>
-  )
+  Effect.runPromise(body.pipe(Effect.provide(ScraperCacheMiddleware.pipe(Layer.provide(inner), Layer.provide(rateLimiter)))) as Effect.Effect<A>)
 
 describe("ScraperCacheMiddleware", () => {
   test("identical searches share one inner fetch", async () => {
     const inner = countingInner()
-    await run(inner.layer, RateLimiterDisabled, Effect.gen(function* () {
-      const scraper = yield* ScraperService
-      yield* scraper.scrape(request())
-      yield* scraper.scrape(request())
-    }))
+    await run(
+      inner.layer,
+      RateLimiterDisabled,
+      Effect.gen(function* () {
+        const scraper = yield* ScraperService
+        yield* scraper.scrape(request())
+        yield* scraper.scrape(request())
+      }),
+    )
     expect(inner.calls()).toBe(1)
   })
 
   test("concurrent identical searches dedupe into one fetch", async () => {
     const inner = countingInner()
-    await run(inner.layer, RateLimiterDisabled, Effect.gen(function* () {
-      const scraper = yield* ScraperService
-      yield* Effect.all([scraper.scrape(request()), scraper.scrape(request())], { concurrency: "unbounded" })
-    }))
+    await run(
+      inner.layer,
+      RateLimiterDisabled,
+      Effect.gen(function* () {
+        const scraper = yield* ScraperService
+        yield* Effect.all([scraper.scrape(request()), scraper.scrape(request())], { concurrency: "unbounded" })
+      }),
+    )
     expect(inner.calls()).toBe(1)
   })
 
   test("fetch-affecting parameters miss the cache", async () => {
     const inner = countingInner()
-    await run(inner.layer, RateLimiterDisabled, Effect.gen(function* () {
-      const scraper = yield* ScraperService
-      yield* scraper.scrape(request())
-      yield* scraper.scrape(request({ filters: { limit: 10, max_stops: 0 } }))
-    }))
+    await run(
+      inner.layer,
+      RateLimiterDisabled,
+      Effect.gen(function* () {
+        const scraper = yield* ScraperService
+        yield* scraper.scrape(request())
+        yield* scraper.scrape(request({ filters: { limit: 10, max_stops: 0 } }))
+      }),
+    )
     expect(inner.calls()).toBe(2)
   })
 
   test("the raw set is cached: client-side filters and sorting apply per call", async () => {
     const inner = countingInner()
-    const [limited, sortedAll] = await run(inner.layer, RateLimiterDisabled, Effect.gen(function* () {
-      const scraper = yield* ScraperService
-      const first = yield* scraper.scrape(request({ filters: { limit: 1 }, sortOption: "price-asc" }))
-      const second = yield* scraper.scrape(request({ filters: { limit: 10 }, sortOption: "price-desc" }))
-      return [first, second]
-    }))
+    const [limited, sortedAll] = await run(
+      inner.layer,
+      RateLimiterDisabled,
+      Effect.gen(function* () {
+        const scraper = yield* ScraperService
+        const first = yield* scraper.scrape(request({ filters: { limit: 1 }, sortOption: "price-asc" }))
+        const second = yield* scraper.scrape(request({ filters: { limit: 10 }, sortOption: "price-desc" }))
+        return [first, second]
+      }),
+    )
 
     expect(inner.calls()).toBe(1)
     expect(limited.flights.map((f) => f.name)).toEqual(["Iberia"])
@@ -104,7 +121,7 @@ describe("ScraperCacheMiddleware", () => {
         // New search: needs a slot, and the window is exhausted
         const third = yield* scraper.scrape(request({ to: "CDG" })).pipe(Effect.exit)
         return [first, second, third]
-      })
+      }),
     )
 
     expect(exits.map(Exit.isSuccess)).toEqual([true, true, false])

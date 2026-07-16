@@ -13,7 +13,9 @@ export const Divider = () => {
   const { width } = useTerminalDimensions()
   return (
     <box width="100%" height={1}>
-      <text wrapMode="none" fg={colors.border}>{"─".repeat(Math.max(0, width - 2))}</text>
+      <text wrapMode="none" fg={colors.border}>
+        {"─".repeat(Math.max(0, width - 2))}
+      </text>
     </box>
   )
 }
@@ -25,8 +27,12 @@ export const Divider = () => {
 export const Header = ({ route, tripSummary }: { readonly route: string; readonly tripSummary: string }) => (
   <box width="100%" height={1} flexDirection="row">
     {/* Sibling text nodes, not spans: see Legend.tsx for why */}
-    <text wrapMode="none" flexShrink={0} fg={colors.accent}>{"✈ flights  "}</text>
-    <text wrapMode="none" flexShrink={0} fg={colors.text} attributes={TextAttributes.BOLD}>{route}</text>
+    <text wrapMode="none" flexShrink={0} fg={colors.accent}>
+      {"✈ flights  "}
+    </text>
+    <text wrapMode="none" flexShrink={0} fg={colors.text} attributes={TextAttributes.BOLD}>
+      {route}
+    </text>
     <text wrapMode="none" fg={colors.muted}>{`  ·  ${tripSummary}`}</text>
   </box>
 )
@@ -34,6 +40,8 @@ export const Header = ({ route, tripSummary }: { readonly route: string; readonl
 /** One-line outcome report: what just happened, not what keys exist */
 export const StatusLine = ({ text }: { readonly text: string }) => (
   <box width="100%" height={1}>
-    <text wrapMode="none" fg={colors.muted}>{text || " "}</text>
+    <text wrapMode="none" fg={colors.muted}>
+      {text || " "}
+    </text>
   </box>
 )

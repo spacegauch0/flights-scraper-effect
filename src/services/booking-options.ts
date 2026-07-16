@@ -51,23 +51,30 @@ const extractAnyToken = (html: string): string | undefined => {
   return match?.[1].replace(/\\u003d/g, "=")
 }
 
-const buildBookingPayload = (
-  token: string,
-  from: string,
-  to: string,
-  date: string,
-  designator: FlightDesignator,
-  passengers: Passengers
-): unknown => [
+const buildBookingPayload = (token: string, from: string, to: string, date: string, designator: FlightDesignator, passengers: Passengers): unknown => [
   [null, token],
-  [null, null, 2, null, [], 1,
+  [
+    null,
+    null,
+    2,
+    null,
+    [],
+    1,
     [passengers.adults, passengers.children, passengers.infants_in_seat, passengers.infants_on_lap],
-    null, null, null, null, null, null,
-    [[[[[from, 0]]], [[[to, 0]]], null, 0, null, null, date, null,
-      [[from, date, to, null, designator.carrier, designator.number]],
-      null, null, null, null, null, 3]],
-    null, null, null, 1],
-  null, 0
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    [[[[[from, 0]]], [[[to, 0]]], null, 0, null, null, date, null, [[from, date, to, null, designator.carrier, designator.number]], null, null, null, null, null, 3]],
+    null,
+    null,
+    null,
+    1,
+  ],
+  null,
+  0,
 ]
 
 /** Extracts booking options from the decoded GetBookingResults payload blocks */
@@ -95,16 +102,16 @@ export const parseBookingOptions = (blocks: readonly unknown[]): BookingOption[]
       if (typeof uParam !== "string") continue
 
       const priceEntry = Array.isArray(opt[8]) ? opt[8][0] : undefined
-      const price = Array.isArray(priceEntry) && typeof priceEntry[1] === "number"
-        ? `${priceEntry[0]} ${priceEntry[1]}`
-        : undefined
+      const price = Array.isArray(priceEntry) && typeof priceEntry[1] === "number" ? `${priceEntry[0]} ${priceEntry[1]}` : undefined
 
-      options.push(BookingOption.make({
-        providerCode,
-        provider: providerName,
-        price,
-        url: `${clickBase}?u=${encodeURIComponent(uParam)}`
-      }))
+      options.push(
+        BookingOption.make({
+          providerCode,
+          provider: providerName,
+          price,
+          url: `${clickBase}?u=${encodeURIComponent(uParam)}`,
+        }),
+      )
     }
   }
 
@@ -125,13 +132,7 @@ export const fetchBookingOptions = Effect.fn("BookingOptions.fetch")(function* (
     return yield* Effect.fail(ScraperErrors.invalidInput("flightNumber", `Not a flight designator: ${params.flightNumber}`))
   }
 
-  const searchUrl = yield* buildFlightUrl(
-    [{ date: params.date, from_airport: params.from, to_airport: params.to }],
-    "one-way",
-    seatClass,
-    passengers,
-    params.currency ?? ""
-  )
+  const searchUrl = yield* buildFlightUrl([{ date: params.date, from_airport: params.from, to_airport: params.to }], "one-way", seatClass, passengers, params.currency ?? "")
 
   const html = yield* fetchSearchPage(searchUrl)
 

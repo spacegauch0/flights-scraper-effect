@@ -16,10 +16,7 @@ export const CommandPalette = ({ shell }: { readonly shell: AppShell }) => {
   const { filter, selected } = shell.state.palette
 
   const clampedSelected = Math.max(0, Math.min(selected, paletteEntries.length - 1))
-  const windowStart = Math.max(
-    0,
-    Math.min(clampedSelected - Math.floor(PALETTE_MAX_ROWS / 2), paletteEntries.length - PALETTE_MAX_ROWS)
-  )
+  const windowStart = Math.max(0, Math.min(clampedSelected - Math.floor(PALETTE_MAX_ROWS / 2), paletteEntries.length - PALETTE_MAX_ROWS))
   const visible = paletteEntries.slice(windowStart, windowStart + PALETTE_MAX_ROWS)
   const innerWidth = PALETTE_WIDTH - 4
 
@@ -62,16 +59,10 @@ export const CommandPalette = ({ shell }: { readonly shell: AppShell }) => {
             const titleText = disabled ? `${entry.title} · ${entry.status}` : entry.title
             return (
               <box key={entry.id} width="100%" height={1} flexDirection="row">
-                <text
-                  fg={isSelected ? colors.selectedText : disabled ? colors.muted : colors.text}
-                  bg={isSelected ? colors.accent : undefined}
-                >
+                <text fg={isSelected ? colors.selectedText : disabled ? colors.muted : colors.text} bg={isSelected ? colors.accent : undefined}>
                   {fixedWidth(titleText, Math.max(8, innerWidth - entry.keys.length - 1), false)}
                 </text>
-                <text
-                  fg={isSelected ? colors.selectedText : colors.hintKey}
-                  bg={isSelected ? colors.accent : undefined}
-                >
+                <text fg={isSelected ? colors.selectedText : colors.hintKey} bg={isSelected ? colors.accent : undefined}>
                   {` ${entry.keys}`}
                 </text>
               </box>

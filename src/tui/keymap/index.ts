@@ -14,39 +14,10 @@
  *   disambiguation timeouts are unit-testable without a terminal.
  */
 
-export {
-	type Binding,
-	type BindingMeta,
-	type Command,
-	type Enabled,
-	isBindingActive,
-	isCommand,
-} from "./binding"
+export { type Binding, type BindingMeta, type Command, type Enabled, isBindingActive, isCommand } from "./binding"
 export { command, type CommandConfig } from "./command"
 export { context, type Context, type ContextItem } from "./context"
-export {
-	type Clock,
-	createDispatcher,
-	type Dispatcher,
-	type DispatcherOptions,
-	type DispatchResult,
-} from "./dispatcher"
+export { type Clock, createDispatcher, type Dispatcher, type DispatcherOptions, type DispatchResult } from "./dispatcher"
 export { Keymap } from "./keymap"
-export {
-	formatSequence,
-	formatStroke,
-	parseBinding,
-	parseKey,
-	type ParsedStroke,
-	sequenceMatches,
-	sequenceStartsWith,
-	strokeMatches,
-} from "./keys"
-export {
-	type DispatchDecision,
-	type DispatchState,
-	initialDispatchState,
-	pureDispatch,
-	type PureDispatchOptions,
-	pureTick,
-} from "./pure-dispatch"
+export { formatSequence, formatStroke, parseBinding, parseKey, type ParsedStroke, sequenceMatches, sequenceStartsWith, strokeMatches } from "./keys"
+export { type DispatchDecision, type DispatchState, initialDispatchState, pureDispatch, type PureDispatchOptions, pureTick } from "./pure-dispatch"

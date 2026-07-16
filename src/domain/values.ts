@@ -21,12 +21,10 @@ export const parseDesignator = (value: string): FlightDesignator | undefined => 
   return { carrier: match[1].toUpperCase(), number: match[2].toUpperCase() }
 }
 
-export const formatDesignator = (designator: FlightDesignator): string =>
-  `${designator.carrier}${designator.number}`
+export const formatDesignator = (designator: FlightDesignator): string => `${designator.carrier}${designator.number}`
 
 /** Parses a formatted price ("$1,234", "USD 431") into a number; unparseable -> 0 */
-export const parsePrice = (price: string): number =>
-  parseFloat(price.replace(/[^0-9.]/g, "")) || 0
+export const parsePrice = (price: string): number => parseFloat(price.replace(/[^0-9.]/g, "")) || 0
 
 /** Parses a duration string like "12 hr 30 min" into total minutes */
 export const parseDurationToMinutes = (duration: string): number => {

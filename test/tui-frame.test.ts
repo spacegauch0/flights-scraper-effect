@@ -14,8 +14,7 @@ import { App } from "../src/tui/app/App"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const makeRuntime = () =>
-  ManagedRuntime.make(Layer.mergeAll(ScraperMockLive, FetchHttpClient.layer))
+const makeRuntime = () => ManagedRuntime.make(Layer.mergeAll(ScraperMockLive, FetchHttpClient.layer))
 
 describe("TUI frames", () => {
   test("search → table → sort by airline renders a consistent board", async () => {
@@ -56,10 +55,7 @@ describe("TUI frames", () => {
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => /\$\d/.test(line) && line.includes("│") && !line.includes("▸"))
-    const airlines = [
-      "Air France", "British Airways", "British Airways", "Delta", "Iberia",
-      "Iberia", "Lufthansa", "Norse Atlantic", "Norse Atlantic", "United"
-    ]
+    const airlines = ["Air France", "British Airways", "British Airways", "Delta", "Iberia", "Iberia", "Lufthansa", "Norse Atlantic", "Norse Atlantic", "United"]
     expect(boardRows.length).toBe(10)
     for (let i = 0; i < airlines.length; i++) {
       expect(boardRows[i] ?? "").toContain(airlines[i])

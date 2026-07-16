@@ -32,7 +32,7 @@ export async function buildGoogleFlightsUrl(
   returnDate?: DateString,
   seatClass: SeatClass = "economy",
   passengers: Passengers = { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
-  currency: string = "USD"
+  currency: string = "USD",
 ): Promise<string> {
   const fallbackUrl = () => {
     let searchQuery = `Flights from ${origin} to ${destination} on ${departDate}`
@@ -43,24 +43,22 @@ export async function buildGoogleFlightsUrl(
   }
 
   // Build flight data for protobuf encoding
-  const flightData = [{
-    date: departDate,
-    from_airport: origin,
-    to_airport: destination
-  }]
+  const flightData = [
+    {
+      date: departDate,
+      from_airport: origin,
+      to_airport: destination,
+    },
+  ]
 
   if (tripType === "round-trip" && returnDate) {
     flightData.push({
       date: returnDate,
       from_airport: destination,
-      to_airport: origin
+      to_airport: origin,
     })
   }
 
   // Encode using protobuf (same as scraper), falling back to a search query URL
-  return Effect.runPromise(
-    buildFlightUrl(flightData, tripType, seatClass, passengers, currency).pipe(
-      Effect.catch(() => Effect.succeed(fallbackUrl()))
-    )
-  )
+  return Effect.runPromise(buildFlightUrl(flightData, tripType, seatClass, passengers, currency).pipe(Effect.catch(() => Effect.succeed(fallbackUrl()))))
 }

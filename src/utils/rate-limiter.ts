@@ -22,9 +22,9 @@ export interface RateLimiterConfig {
  * Conservative limits to avoid triggering Google's rate limiting
  */
 export const defaultRateLimiterConfig: RateLimiterConfig = {
-  maxRequests: 10,          // 10 requests
-  windowMs: 60 * 1000,      // per minute
-  minDelay: 2000            // 2 seconds between requests
+  maxRequests: 10, // 10 requests
+  windowMs: 60 * 1000, // per minute
+  minDelay: 2000, // 2 seconds between requests
 }
 
 interface RateLimiterState {
@@ -34,17 +34,18 @@ interface RateLimiterState {
   readonly last: number
 }
 
-type AcquireDecision =
-  | { readonly granted: true; readonly delayMs: number }
-  | { readonly granted: false; readonly waitMs: number }
+type AcquireDecision = { readonly granted: true; readonly delayMs: number } | { readonly granted: false; readonly waitMs: number }
 
 /**
  * Rate limiter service interface: acquire a request slot or fail with a
  * typed RateLimitExceeded error.
  */
-export class RateLimiterService extends Context.Service<RateLimiterService, {
-  readonly acquire: () => Effect.Effect<void, ScraperError>
-}>()("RateLimiterService") {}
+export class RateLimiterService extends Context.Service<
+  RateLimiterService,
+  {
+    readonly acquire: () => Effect.Effect<void, ScraperError>
+  }
+>()("RateLimiterService") {}
 
 /**
  * In-memory rate limiter implementation using sliding window.
@@ -67,14 +68,20 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
           const recent = state.requests.filter((t) => t > windowStart)
 
           if (recent.length >= maxRequests) {
-            return [{ granted: false, waitMs: recent[0] + windowMs - now }, { ...state, requests: recent }]
+            return [
+              { granted: false, waitMs: recent[0] + windowMs - now },
+              { ...state, requests: recent },
+            ]
           }
 
           // Reserve the slot at its effective time: after the pacing delay,
           // so a concurrent acquire spaces itself off this one.
           const delayMs = state.last > 0 ? Math.max(0, minDelay - (now - state.last)) : 0
           const effectiveAt = now + delayMs
-          return [{ granted: true, delayMs }, { requests: [...recent, effectiveAt], last: effectiveAt }]
+          return [
+            { granted: true, delayMs },
+            { requests: [...recent, effectiveAt], last: effectiveAt },
+          ]
         })
 
         if (!decision.granted) {
@@ -87,7 +94,7 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
       })
 
       return RateLimiterService.of({ acquire })
-    })
+    }),
   )
 
 /**
@@ -96,6 +103,6 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
 export const RateLimiterDisabled = Layer.succeed(
   RateLimiterService,
   RateLimiterService.of({
-    acquire: () => Effect.void
-  })
+    acquire: () => Effect.void,
+  }),
 )

@@ -37,16 +37,27 @@ export { ScraperMockLive } from "./services/scraper-mock"
 
 // Request/response contract
 export {
-  ScrapeRequestSchema, type ScrapeRequest,
-  FlightOption, Result, BookingOption,
-  FlightFiltersSchema, type FlightFilters,
-  PassengersSchema, type Passengers,
-  TripTypeSchema, type TripType,
-  SeatClassSchema, type SeatClass,
-  SortOptionSchema, type SortOption,
-  AirportCodeSchema, type AirportCode,
-  DateStringSchema, type DateString,
-  FlightLegSchema, type FlightLeg,
+  ScrapeRequestSchema,
+  type ScrapeRequest,
+  FlightOption,
+  Result,
+  BookingOption,
+  FlightFiltersSchema,
+  type FlightFilters,
+  PassengersSchema,
+  type Passengers,
+  TripTypeSchema,
+  type TripType,
+  SeatClassSchema,
+  type SeatClass,
+  SortOptionSchema,
+  type SortOption,
+  AirportCodeSchema,
+  type AirportCode,
+  DateStringSchema,
+  type DateString,
+  FlightLegSchema,
+  type FlightLeg,
 } from "./domain/types"
 export { ScraperError } from "./domain/errors"
 
@@ -57,7 +68,4 @@ export { fetchBookingOptions, type BookingOptionsParams } from "./services/booki
 export { fetchMultiCityItinerary, type MultiCityParams } from "./services/multi-city"
 
 // Rate limiter (required by ScraperProductionLive)
-export {
-  RateLimiterService, RateLimiterLive, RateLimiterDisabled,
-  defaultRateLimiterConfig, type RateLimiterConfig,
-} from "./utils/rate-limiter"
+export { RateLimiterService, RateLimiterLive, RateLimiterDisabled, defaultRateLimiterConfig, type RateLimiterConfig } from "./utils/rate-limiter"

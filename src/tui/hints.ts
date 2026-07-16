@@ -7,8 +7,7 @@
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
 export const SPINNER_INTERVAL_MS = 1000 / 12
 
-export const spinnerFrame = (tick: number): string =>
-  SPINNER_FRAMES[((tick % SPINNER_FRAMES.length) + SPINNER_FRAMES.length) % SPINNER_FRAMES.length]
+export const spinnerFrame = (tick: number): string => SPINNER_FRAMES[((tick % SPINNER_FRAMES.length) + SPINNER_FRAMES.length) % SPINNER_FRAMES.length]
 
 export interface HintItem {
   readonly key: string

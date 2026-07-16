@@ -31,8 +31,7 @@ const cellValue = (flight: FlightOption, key: string): string => {
   }
 }
 
-const stopsColor = (stops: number): string =>
-  stops === 0 ? colors.success : stops === 1 ? colors.warning : colors.error
+const stopsColor = (stops: number): string => (stops === 0 ? colors.success : stops === 1 ? colors.warning : colors.error)
 
 const cellColor = (flight: FlightOption, key: string): string => {
   switch (key) {
@@ -47,8 +46,7 @@ const cellColor = (flight: FlightOption, key: string): string => {
   }
 }
 
-const priceLevelColor = (level: "low" | "typical" | "high"): string =>
-  level === "low" ? colors.success : level === "high" ? colors.error : colors.warning
+const priceLevelColor = (level: "low" | "typical" | "high"): string => (level === "low" ? colors.success : level === "high" ? colors.error : colors.warning)
 
 /** Centered single-message state (empty / loading / error headline) */
 const CenteredNote = ({ children }: { readonly children: React.ReactNode }) => (
@@ -102,7 +100,9 @@ export const ResultsTable = ({ shell }: { readonly shell: AppShell }) => {
       {resultsView === "table" ? (
         <box width="100%" flexDirection="column">
           <box width="100%" height={1} flexDirection="row" justifyContent="space-between" marginBottom={1}>
-            <text wrapMode="none" fg={multiCityFlow ? colors.accent : colors.text}>{boardTitle}</text>
+            <text wrapMode="none" fg={multiCityFlow ? colors.accent : colors.text}>
+              {boardTitle}
+            </text>
             <text wrapMode="none" fg={priceLevel ? priceLevelColor(priceLevel) : colors.muted}>
               {priceLevel ? `prices ${priceLevel}` : ""}
             </text>
@@ -132,13 +132,7 @@ export const ResultsTable = ({ shell }: { readonly shell: AppShell }) => {
             const isRowSelected = table.inTableMode && table.selectedRow === rowIndex
             const rowBg = isRowSelected ? colors.accent : flight.is_best ? colors.bestRowBg : undefined
             return (
-              <box
-                key={rowIndex}
-                width="100%"
-                height={1}
-                flexDirection="row"
-                backgroundColor={rowBg}
-              >
+              <box key={rowIndex} width="100%" height={1} flexDirection="row" backgroundColor={rowBg}>
                 {TABLE_COLUMNS.map((col, colIndex) => {
                   const isLast = colIndex === TABLE_COLUMNS.length - 1
                   return (
@@ -159,7 +153,9 @@ export const ResultsTable = ({ shell }: { readonly shell: AppShell }) => {
           })}
 
           <box width="100%" height={1} marginTop={1}>
-            <text wrapMode="none" fg={colors.muted}>{selectionDetail}</text>
+            <text wrapMode="none" fg={colors.muted}>
+              {selectionDetail}
+            </text>
           </box>
         </box>
       ) : null}

@@ -11,6 +11,9 @@ import { Result, ScraperError, ScrapeRequest } from "../domain"
  * Callers construct a validated ScrapeRequest (decode untrusted input against
  * ScrapeRequestSchema at the boundary) and receive a parsed Result.
  */
-export class ScraperService extends Context.Service<ScraperService, {
-  readonly scrape: (request: ScrapeRequest) => Effect.Effect<Result, ScraperError>
-}>()("ScraperService") {}
+export class ScraperService extends Context.Service<
+  ScraperService,
+  {
+    readonly scrape: (request: ScrapeRequest) => Effect.Effect<Result, ScraperError>
+  }
+>()("ScraperService") {}

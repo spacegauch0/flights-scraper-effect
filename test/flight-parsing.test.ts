@@ -15,10 +15,7 @@ import { applyFiltersSortAndLimit, filterFlights, parseHtmlFallback, sortFlights
 const bookingToken = (designator: string): string => {
   const field1 = new TextEncoder().encode("x".repeat(50))
   const field2 = new TextEncoder().encode(designator)
-  const bytes = Uint8Array.from([
-    0x0a, field1.length, ...field1,
-    0x12, field2.length, ...field2,
-  ])
+  const bytes = Uint8Array.from([0x0a, field1.length, ...field1, 0x12, field2.length, ...field2])
   const token = Buffer.from(bytes).toString("base64")
   expect(token).toStartWith("Cj")
   return token
@@ -94,11 +91,7 @@ describe("filtering and sorting", () => {
   })
 
   test("applyFiltersSortAndLimit composes all three", () => {
-    const result = applyFiltersSortAndLimit(
-      { flights },
-      { maxPrice: 500, limit: 2 },
-      "price-asc"
-    )
+    const result = applyFiltersSortAndLimit({ flights }, { maxPrice: 500, limit: 2 }, "price-asc")
     expect(result.flights.map((f) => f.name)).toEqual(["Iberia", "Delta"])
   })
 })

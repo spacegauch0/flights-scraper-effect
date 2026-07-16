@@ -11,10 +11,7 @@
 import { Effect, Exit, ManagedRuntime, Schema } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useEffect, useMemo, useRef, useState } from "react"
-import {
-  ScraperService, cheapestBookingOption, fetchBookingOptions,
-  startMultiCityPicker, chooseMultiCityOption, type ItineraryLeg, type PickLeg
-} from "../../services"
+import { ScraperService, cheapestBookingOption, fetchBookingOptions, startMultiCityPicker, chooseMultiCityOption, type ItineraryLeg, type PickLeg } from "../../services"
 import { ScrapeRequestSchema, ScraperErrors } from "../../domain"
 import type { FlightLeg, FlightOption, Passengers, ScrapeRequest, ScraperError, SeatClass, TripType } from "../../domain"
 import { openInBrowser, buildGoogleFlightsUrl } from "../browser"
@@ -122,9 +119,7 @@ export const focusIdsFor = (form: FormState): readonly string[] => [
   "tripType",
   "departDate",
   ...(form.tripType === "round-trip" ? ["returnDate"] : []),
-  ...(form.tripType === "multi-city"
-    ? form.legs.flatMap((_, index) => [`leg-${index}-from`, `leg-${index}-to`, `leg-${index}-date`])
-    : []),
+  ...(form.tripType === "multi-city" ? form.legs.flatMap((_, index) => [`leg-${index}-from`, `leg-${index}-to`, `leg-${index}-date`]) : []),
   "seatClass",
   "adults",
   "children",
@@ -144,16 +139,12 @@ const buildCandidate = (form: FormState): unknown => ({
   seat: form.seatClass,
   passengers: form.passengers,
   currency: "USD",
-  ...(form.tripType === "multi-city"
-    ? { additionalLegs: form.legs.map((leg) => ({ from: leg.from.toUpperCase(), to: leg.to.toUpperCase(), date: leg.date })) }
-    : {}),
+  ...(form.tripType === "multi-city" ? { additionalLegs: form.legs.map((leg) => ({ from: leg.from.toUpperCase(), to: leg.to.toUpperCase(), date: leg.date })) } : {}),
 })
 
 const decodeRequest = (candidate: unknown): Effect.Effect<ScrapeRequest, ScraperError> =>
   Schema.decodeUnknownEffect(ScrapeRequestSchema)(candidate).pipe(
-    Effect.mapError((error) =>
-      ScraperErrors.invalidInput("search form", error instanceof Error ? error.message : String(error))
-    )
+    Effect.mapError((error) => ScraperErrors.invalidInput("search form", error instanceof Error ? error.message : String(error))),
   )
 
 export const useAppShell = (runtime: AppRuntime) => {
@@ -171,8 +162,7 @@ export const useAppShell = (runtime: AppRuntime) => {
 
   // ---- Form actions ----
 
-  const patchForm = (patch: Partial<FormState>) =>
-    update((s) => ({ ...s, form: { ...s.form, ...patch } }))
+  const patchForm = (patch: Partial<FormState>) => update((s) => ({ ...s, form: { ...s.form, ...patch } }))
 
   const setTripType = (tripType: TripType) =>
     update((s) => ({
@@ -180,9 +170,7 @@ export const useAppShell = (runtime: AppRuntime) => {
       form: {
         ...s.form,
         tripType,
-        legs: tripType === "multi-city" && s.form.legs.length === 0
-          ? [{ from: "", to: "", date: s.form.departDate }]
-          : s.form.legs,
+        legs: tripType === "multi-city" && s.form.legs.length === 0 ? [{ from: "", to: "", date: s.form.departDate }] : s.form.legs,
       },
     }))
 
@@ -201,8 +189,7 @@ export const useAppShell = (runtime: AppRuntime) => {
       form: { ...s.form, legs: [...s.form.legs, { from: "", to: "", date: s.form.departDate }] },
     }))
 
-  const removeLeg = () =>
-    update((s) => ({ ...s, form: { ...s.form, legs: s.form.legs.slice(0, -1) } }))
+  const removeLeg = () => update((s) => ({ ...s, form: { ...s.form, legs: s.form.legs.slice(0, -1) } }))
 
   const focusMove = (delta: number) =>
     update((s) => {
@@ -220,7 +207,7 @@ export const useAppShell = (runtime: AppRuntime) => {
             ...s,
             table: { ...s.table, inTableMode: true, selectedRow: 0, selectedCol: 0 },
             status: "",
-          }
+          },
     )
 
   const exitTable = () =>
@@ -322,9 +309,7 @@ export const useAppShell = (runtime: AppRuntime) => {
       isSearching: false,
       multiCityFlow: step._tag === "PickLeg" ? step : undefined,
       multiCityItinerary: step._tag === "Complete" ? step.itinerary : undefined,
-      results: step._tag === "PickLeg"
-        ? step.options.map((option) => option.flight)
-        : step.itinerary.map((entry) => entry.flight),
+      results: step._tag === "PickLeg" ? step.options.map((option) => option.flight) : step.itinerary.map((entry) => entry.flight),
       priceLevel: undefined,
       status: "",
       table: { ...s.table, selectedRow: 0, selectedCol: 0 },
@@ -400,7 +385,7 @@ export const useAppShell = (runtime: AppRuntime) => {
           seat: request.seat,
           passengers: request.passengers,
           currency: "USD",
-        })
+        }),
       )
 
       const cheapest = Exit.isSuccess(exit) ? cheapestBookingOption(exit.value) : undefined
@@ -418,10 +403,7 @@ export const useAppShell = (runtime: AppRuntime) => {
     }
 
     if (!request) return
-    const url = await buildGoogleFlightsUrl(
-      request.from, request.to, request.departDate, request.tripType,
-      request.returnDate, request.seat, request.passengers
-    )
+    const url = await buildGoogleFlightsUrl(request.from, request.to, request.departDate, request.tripType, request.returnDate, request.seat, request.passengers)
     openInBrowser(url)
     flash("No direct link for this flight - opening the search in your browser...")
   }
@@ -450,11 +432,9 @@ export const useAppShell = (runtime: AppRuntime) => {
       palette: { open: true, returnMode: s.table.inTableMode ? "table" : "form", selected: 0, filter: "" },
     }))
 
-  const closePalette = () =>
-    update((s) => ({ ...s, palette: { ...s.palette, open: false } }))
+  const closePalette = () => update((s) => ({ ...s, palette: { ...s.palette, open: false } }))
 
-  const setPaletteFilter = (filter: string) =>
-    update((s) => ({ ...s, palette: { ...s.palette, filter, selected: 0 } }))
+  const setPaletteFilter = (filter: string) => update((s) => ({ ...s, palette: { ...s.palette, filter, selected: 0 } }))
 
   const movePaletteSelection = (delta: number) =>
     update((s) => {
@@ -491,7 +471,9 @@ export const useAppShell = (runtime: AppRuntime) => {
         isMultiCity: s.form.tripType === "multi-city",
         canAddLeg: s.form.legs.length < MAX_ADDITIONAL_LEGS,
         canRemoveLeg: s.form.legs.length > 1,
-        search: () => { void doSearch() },
+        search: () => {
+          void doSearch()
+        },
         enterTable: enterTable,
         focusNext: () => focusMove(1),
         focusPrev: () => focusMove(-1),
@@ -557,20 +539,14 @@ export const useAppShell = (runtime: AppRuntime) => {
 
   useEffect(() => {
     if (!state.isSearching) return
-    const timer = setInterval(
-      () => update((s) => ({ ...s, spinnerTick: s.spinnerTick + 1 })),
-      SPINNER_INTERVAL_MS
-    )
+    const timer = setInterval(() => update((s) => ({ ...s, spinnerTick: s.spinnerTick + 1 })), SPINNER_INTERVAL_MS)
     return () => clearInterval(timer)
   }, [state.isSearching])
-
 
   // ---- Derivations for rendering ----
 
   const focusIds = focusIdsFor(state.form)
-  const focusId = state.palette.open || state.table.inTableMode
-    ? null
-    : focusIds[Math.min(state.focusIndex, focusIds.length - 1)]
+  const focusId = state.palette.open || state.table.inTableMode ? null : focusIds[Math.min(state.focusIndex, focusIds.length - 1)]
 
   const hintsCtx: HintsContext = {
     mode,
@@ -581,33 +557,21 @@ export const useAppShell = (runtime: AppRuntime) => {
     canAddLeg: state.form.legs.length < MAX_ADDITIONAL_LEGS,
     canRemoveLeg: state.form.legs.length > 1,
     isPickingLeg: state.multiCityFlow !== undefined,
-    legLabel: state.multiCityFlow
-      ? `leg ${state.multiCityFlow.legIndex + 1}/${state.multiCityFlow.legCount}`
-      : undefined,
+    legLabel: state.multiCityFlow ? `leg ${state.multiCityFlow.legIndex + 1}/${state.multiCityFlow.legCount}` : undefined,
   }
   const hints: readonly HintItem[] = footerHints(hintsCtx)
 
-  const statusDisplay = state.isSearching
-    ? `${spinnerFrame(state.spinnerTick)} ${state.spinnerLabel}`
-    : state.status
+  const statusDisplay = state.isSearching ? `${spinnerFrame(state.spinnerTick)} ${state.spinnerLabel}` : state.status
 
-  const resultsView: ResultsView = state.isSearching
-    ? "loading"
-    : state.errorMessage !== undefined
-      ? "error"
-      : state.results.length > 0
-        ? "table"
-        : "placeholder"
+  const resultsView: ResultsView = state.isSearching ? "loading" : state.errorMessage !== undefined ? "error" : state.results.length > 0 ? "table" : "placeholder"
 
   const sortedFlights = useMemo(
     () => sortFlightsByColumn([...state.results], state.table.sortColumn, state.table.sortAsc),
-    [state.results, state.table.sortColumn, state.table.sortAsc]
+    [state.results, state.table.sortColumn, state.table.sortAsc],
   )
 
   const route = routeSummary(state.form)
-  const paxCount =
-    state.form.passengers.adults + state.form.passengers.children +
-    state.form.passengers.infants_in_seat + state.form.passengers.infants_on_lap
+  const paxCount = state.form.passengers.adults + state.form.passengers.children + state.form.passengers.infants_in_seat + state.form.passengers.infants_on_lap
   const tripSummary = `${state.form.tripType} · ${state.form.seatClass} · ${paxCount} pax`
 
   return {
@@ -625,7 +589,9 @@ export const useAppShell = (runtime: AppRuntime) => {
       patchForm,
       setTripType,
       patchLeg,
-      performSearch: () => { void doSearch() },
+      performSearch: () => {
+        void doSearch()
+      },
       setPaletteFilter,
     },
   }

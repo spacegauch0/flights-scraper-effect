@@ -27,9 +27,8 @@ export async function runTui() {
   // rebuilding the layer graph per program. FLIGHTS_TUI_MOCK=1
   // (bun run tui:mock) swaps in the deterministic mock scraper for
   // network-free UI iteration.
-  const AppLive = process.env.FLIGHTS_TUI_MOCK === "1"
-    ? Layer.mergeAll(ScraperMockLive, FetchHttpClient.layer)
-    : ScraperProtobufLive.pipe(Layer.provideMerge(FetchHttpClient.layer))
+  const AppLive =
+    process.env.FLIGHTS_TUI_MOCK === "1" ? Layer.mergeAll(ScraperMockLive, FetchHttpClient.layer) : ScraperProtobufLive.pipe(Layer.provideMerge(FetchHttpClient.layer))
   const runtime = ManagedRuntime.make(AppLive)
 
   createRoot(renderer).render(<App runtime={runtime} />)

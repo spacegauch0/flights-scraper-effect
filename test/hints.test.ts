@@ -13,7 +13,6 @@ const baseCtx: HintsContext = {
 }
 
 const keys = (ctx: HintsContext) => footerHints(ctx).map((item) => item.key)
-const labels = (ctx: HintsContext) => footerHints(ctx).map((item) => item.label)
 
 describe("footerHints", () => {
   test("form mode without results hides the results hint", () => {

@@ -26,8 +26,8 @@ export const ScraperProtobufLive = Layer.effect(
       HttpClient.filterStatusOk,
       HttpClient.retryTransient({
         times: 3,
-        schedule: Schedule.exponential("1 second").pipe(Schedule.jittered)
-      })
+        schedule: Schedule.exponential("1 second").pipe(Schedule.jittered),
+      }),
     )
 
     return ScraperService.of({
@@ -48,7 +48,13 @@ export const ScraperProtobufLive = Layer.effect(
           if (tripType === "multi-city" && additionalLegs) {
             yield* Console.log(`🚀 Scraping multi-city itinerary (${additionalLegs.length + 1} legs)...`)
             return yield* fetchMultiCityItinerary({
-              from, to, departDate, additionalLegs, seat, passengers, currency
+              from,
+              to,
+              departDate,
+              additionalLegs,
+              seat,
+              passengers,
+              currency,
             })
           }
 
@@ -59,8 +65,8 @@ export const ScraperProtobufLive = Layer.effect(
               from_airport: from,
               to_airport: to,
               max_stops: filters.max_stops,
-              airlines: filters.airlines
-            }
+              airlines: filters.airlines,
+            },
           ]
 
           // Add return flight for round-trip
@@ -70,7 +76,7 @@ export const ScraperProtobufLive = Layer.effect(
               from_airport: to,
               to_airport: from,
               max_stops: filters.max_stops,
-              airlines: filters.airlines
+              airlines: filters.airlines,
             })
           }
 
@@ -91,8 +97,8 @@ export const ScraperProtobufLive = Layer.effect(
           return applyFiltersSortAndLimit(result, filters, sortOption)
         },
         // The whole scrape runs against this adapter's status-classified client
-        (effect) => Effect.provideService(effect, HttpClient.HttpClient, httpClient)
-      )
+        (effect) => Effect.provideService(effect, HttpClient.HttpClient, httpClient),
+      ),
     })
-  })
+  }),
 )

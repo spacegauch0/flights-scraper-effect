@@ -19,7 +19,9 @@ interface CtxOptions {
 }
 
 const makeCtx = (options: CtxOptions = {}, calls: string[] = []) => {
-  const record = (name: string) => () => { calls.push(name) }
+  const record = (name: string) => () => {
+    calls.push(name)
+  }
   const form: FormCtx = {
     isSearching: options.isSearching ?? false,
     hasResults: options.hasResults ?? false,
@@ -38,9 +40,15 @@ const makeCtx = (options: CtxOptions = {}, calls: string[] = []) => {
     rowCount: options.rowCount ?? 3,
     selectedRow: options.selectedRow ?? 0,
     isPickingLeg: false,
-    moveRow: (delta) => { calls.push(`moveRow:${delta}`) },
-    moveCol: (delta) => { calls.push(`moveCol:${delta}`) },
-    setRow: (row) => { calls.push(`setRow:${row}`) },
+    moveRow: (delta) => {
+      calls.push(`moveRow:${delta}`)
+    },
+    moveCol: (delta) => {
+      calls.push(`moveCol:${delta}`)
+    },
+    setRow: (row) => {
+      calls.push(`setRow:${row}`)
+    },
     sortByCurrentColumn: record("sort"),
     activate: record("activate"),
     exit: record("exit"),
@@ -48,7 +56,9 @@ const makeCtx = (options: CtxOptions = {}, calls: string[] = []) => {
   }
   const palette: PaletteCtx = {
     entryCount: options.paletteEntryCount ?? 3,
-    move: (delta) => { calls.push(`paletteMove:${delta}`) },
+    move: (delta) => {
+      calls.push(`paletteMove:${delta}`)
+    },
     run: record("paletteRun"),
     close: record("paletteClose"),
   }
@@ -56,8 +66,7 @@ const makeCtx = (options: CtxOptions = {}, calls: string[] = []) => {
   return { ctx, calls }
 }
 
-const dispatch = (ctx: AppCtx, key: string, state = initialDispatchState, now = 0) =>
-  pureDispatch(appKeymap, state, parseKey(key), ctx, now)
+const dispatch = (ctx: AppCtx, key: string, state = initialDispatchState, now = 0) => pureDispatch(appKeymap, state, parseKey(key), ctx, now)
 
 describe("app keymap", () => {
   test("enter runs search in form mode", () => {

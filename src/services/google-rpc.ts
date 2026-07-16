@@ -15,8 +15,7 @@ import { Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ScraperErrors } from "../domain"
 
-export const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+export const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
 /**
  * The values Google's web app sends with every frontend RPC, scraped as
@@ -37,8 +36,7 @@ export const extractRpcSession = (html: string, referer: string): RpcSession | u
 }
 
 /** Encodes an inner payload array into Google's f.req form body */
-export const encodeFReq = (payload: unknown): string =>
-  `f.req=${encodeURIComponent(JSON.stringify([null, JSON.stringify(payload)]))}&`
+export const encodeFReq = (payload: unknown): string => `f.req=${encodeURIComponent(JSON.stringify([null, JSON.stringify(payload)]))}&`
 
 /**
  * Parses every wrb.fr JSON payload out of a raw RPC response body (a
@@ -63,11 +61,7 @@ export const parseRpcBlocks = (responseText: string): unknown[] => {
  * Calls a FlightsFrontendService endpoint and returns the decoded wrb.fr
  * payload blocks.
  */
-export const callFlightsRpc = Effect.fn("GoogleFlightsRpc.call")(function* (options: {
-  readonly endpoint: string
-  readonly session: RpcSession
-  readonly payload: unknown
-}) {
+export const callFlightsRpc = Effect.fn("GoogleFlightsRpc.call")(function* (options: { readonly endpoint: string; readonly session: RpcSession; readonly payload: unknown }) {
   const client = yield* HttpClient.HttpClient
   const reqid = Math.floor(Math.random() * 900_000) + 100_000
   const url = `${options.endpoint}?f.sid=${options.session.fSid}&bl=${options.session.bl}&hl=en&soc-app=162&soc-platform=1&soc-device=1&_reqid=${reqid}&rt=c`
@@ -76,15 +70,15 @@ export const callFlightsRpc = Effect.fn("GoogleFlightsRpc.call")(function* (opti
     HttpClientRequest.setHeaders({
       "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
       "x-same-domain": "1",
-      "referer": options.session.referer,
+      referer: options.session.referer,
       "user-agent": USER_AGENT,
     }),
-    HttpClientRequest.bodyText(encodeFReq(options.payload), "application/x-www-form-urlencoded;charset=UTF-8")
+    HttpClientRequest.bodyText(encodeFReq(options.payload), "application/x-www-form-urlencoded;charset=UTF-8"),
   )
 
   const responseText = yield* client.execute(request).pipe(
     Effect.flatMap((response) => response.text),
-    Effect.mapError((error) => ScraperErrors.navigationFailed(url, String(error)))
+    Effect.mapError((error) => ScraperErrors.navigationFailed(url, String(error))),
   )
 
   return parseRpcBlocks(responseText)

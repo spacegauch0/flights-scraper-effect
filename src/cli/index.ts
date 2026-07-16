@@ -8,10 +8,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { NodeRuntime } from "@effect/platform-node"
 import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
 import { RateLimiterLive, defaultRateLimiterConfig } from "../utils"
-import {
-  AirportCodeSchema, DateStringSchema, TripTypeSchema, SeatClassSchema, SortOptionSchema,
-  PassengersSchema, FlightFiltersSchema
-} from "../domain"
+import { AirportCodeSchema, DateStringSchema, TripTypeSchema, SeatClassSchema, SortOptionSchema, PassengersSchema, FlightFiltersSchema } from "../domain"
 import type { ScrapeRequest, FlightFilters, FlightOption } from "../domain"
 
 /**
@@ -125,7 +122,7 @@ function parseArgs(): CliArgs {
         parsed.nonstopOnly = true
         break
       case "--airlines":
-        if (nextArg) parsed.airlines = nextArg.split(",").map(a => a.trim())
+        if (nextArg) parsed.airlines = nextArg.split(",").map((a) => a.trim())
         i++
         break
       case "--limit":
@@ -218,9 +215,7 @@ Examples:
  */
 function formatFlight(flight: FlightOption, index: number): string {
   const bestBadge = flight.is_best ? "⭐ " : ""
-  const departureArrival = flight.departure && flight.arrival
-    ? `${flight.departure} → ${flight.arrival}`
-    : ""
+  const departureArrival = flight.departure && flight.arrival ? `${flight.departure} → ${flight.arrival}` : ""
   const timeAhead = flight.arrival_time_ahead ? ` (${flight.arrival_time_ahead})` : ""
   const stopsText = flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`
   const delay = flight.delay ? ` | Delay: ${flight.delay}` : ""
@@ -263,36 +258,36 @@ export const cliProgram = Effect.gen(function* () {
   const from = decodeOrExit(AirportCodeSchema, args.from.toUpperCase(), "--from")
   const to = decodeOrExit(AirportCodeSchema, args.to.toUpperCase(), "--to")
   const departDate = decodeOrExit(DateStringSchema, args.departDate, "--depart-date")
-  const returnDate = args.returnDate === undefined
-    ? undefined
-    : decodeOrExit(DateStringSchema, args.returnDate, "--return-date")
-  const tripType = args.tripType === undefined
-    ? "one-way" as const
-    : decodeOrExit(TripTypeSchema, args.tripType, "--trip-type")
-  const sortOption = args.sort === undefined
-    ? "price-asc" as const
-    : decodeOrExit(SortOptionSchema, args.sort, "--sort")
-  const seat = args.seat === undefined
-    ? "economy" as const
-    : decodeOrExit(SeatClassSchema, args.seat, "--seat")
+  const returnDate = args.returnDate === undefined ? undefined : decodeOrExit(DateStringSchema, args.returnDate, "--return-date")
+  const tripType = args.tripType === undefined ? ("one-way" as const) : decodeOrExit(TripTypeSchema, args.tripType, "--trip-type")
+  const sortOption = args.sort === undefined ? ("price-asc" as const) : decodeOrExit(SortOptionSchema, args.sort, "--sort")
+  const seat = args.seat === undefined ? ("economy" as const) : decodeOrExit(SeatClassSchema, args.seat, "--seat")
 
-  const passengers = decodeOrExit(PassengersSchema, {
-    adults: args.adults ?? 1,
-    children: args.children ?? 0,
-    infants_in_seat: args.infantsInSeat ?? 0,
-    infants_on_lap: args.infantsOnLap ?? 0
-  }, "passenger counts")
+  const passengers = decodeOrExit(
+    PassengersSchema,
+    {
+      adults: args.adults ?? 1,
+      children: args.children ?? 0,
+      infants_in_seat: args.infantsInSeat ?? 0,
+      infants_on_lap: args.infantsOnLap ?? 0,
+    },
+    "passenger counts",
+  )
 
   // Filters use optional keys: only include the flags that were actually set
-  const filters: FlightFilters = decodeOrExit(FlightFiltersSchema, {
-    ...(args.maxPrice !== undefined && { maxPrice: args.maxPrice }),
-    ...(args.minPrice !== undefined && { minPrice: args.minPrice }),
-    ...(args.maxDuration !== undefined && { maxDurationMinutes: args.maxDuration }),
-    ...(args.maxStops !== undefined && { max_stops: args.maxStops }),
-    ...(args.nonstopOnly !== undefined && { nonstopOnly: args.nonstopOnly }),
-    ...(args.airlines !== undefined && { airlines: [...args.airlines] }),
-    limit: args.limit ?? 10
-  }, "filters")
+  const filters: FlightFilters = decodeOrExit(
+    FlightFiltersSchema,
+    {
+      ...(args.maxPrice !== undefined && { maxPrice: args.maxPrice }),
+      ...(args.minPrice !== undefined && { minPrice: args.minPrice }),
+      ...(args.maxDuration !== undefined && { maxDurationMinutes: args.maxDuration }),
+      ...(args.maxStops !== undefined && { max_stops: args.maxStops }),
+      ...(args.nonstopOnly !== undefined && { nonstopOnly: args.nonstopOnly }),
+      ...(args.airlines !== undefined && { airlines: [...args.airlines] }),
+      limit: args.limit ?? 10,
+    },
+    "filters",
+  )
 
   const request: ScrapeRequest = {
     from,
@@ -304,7 +299,7 @@ export const cliProgram = Effect.gen(function* () {
     filters,
     seat,
     passengers,
-    ...(args.currency !== undefined && { currency: args.currency })
+    ...(args.currency !== undefined && { currency: args.currency }),
   }
 
   // Log search parameters (unless JSON output)
@@ -362,14 +357,9 @@ export const cliProgram = Effect.gen(function* () {
  */
 export const createCliLayer = (production: boolean = false) => {
   if (production) {
-    return ScraperProductionLive.pipe(
-      Layer.provide(RateLimiterLive(defaultRateLimiterConfig)),
-      Layer.provide(FetchHttpClient.layer)
-    )
+    return ScraperProductionLive.pipe(Layer.provide(RateLimiterLive(defaultRateLimiterConfig)), Layer.provide(FetchHttpClient.layer))
   } else {
-    return ScraperProtobufLive.pipe(
-      Layer.provide(FetchHttpClient.layer)
-    )
+    return ScraperProtobufLive.pipe(Layer.provide(FetchHttpClient.layer))
   }
 }
 
@@ -380,7 +370,7 @@ export const createCliLayer = (production: boolean = false) => {
 export const runCli = (production: boolean = false): void => {
   const program = cliProgram.pipe(
     Effect.provide(createCliLayer(production)),
-    Effect.tapError((error) => Console.error(`\n--- ERROR ---\n${error.message}`))
+    Effect.tapError((error) => Console.error(`\n--- ERROR ---\n${error.message}`)),
   )
 
   NodeRuntime.runMain(program, { disableErrorReporting: true })

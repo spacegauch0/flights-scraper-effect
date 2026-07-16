@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  formatClock12, formatDesignator, formatDurationHrMin,
-  parseDesignator, parseDurationToMinutes, parsePrice
-} from "../src/domain/values"
+import { formatClock12, formatDesignator, formatDurationHrMin, parseDesignator, parseDurationToMinutes, parsePrice } from "../src/domain/values"
 
 describe("FlightDesignator", () => {
   test("parses carrier + number", () => {

@@ -29,7 +29,7 @@ const CACHE_TTL = Duration.minutes(15)
 class SearchKey implements Equal.Equal {
   constructor(
     readonly id: string,
-    readonly compute: Effect.Effect<Result, ScraperError>
+    readonly compute: Effect.Effect<Result, ScraperError>,
   ) {}
 
   [Equal.symbol](that: Equal.Equal): boolean {
@@ -57,7 +57,7 @@ const searchId = (request: ScrapeRequest): string => {
     currency ?? "none",
     filters.max_stops ?? "any",
     filters.airlines && filters.airlines.length > 0 ? [...filters.airlines].sort().join("+") : "any",
-    additionalLegs?.map((leg) => `${leg.from}-${leg.to}-${leg.date}`).join(",") ?? ""
+    additionalLegs?.map((leg) => `${leg.from}-${leg.to}-${leg.date}`).join(",") ?? "",
   ].join("|")
 }
 
@@ -79,47 +79,42 @@ const rawRequest = (request: ScrapeRequest): ScrapeRequest => ({
  * Caching + rate limiting around whatever ScraperService it is given.
  * Compose with an inner adapter via Layer.provide.
  */
-export const ScraperCacheMiddleware: Layer.Layer<ScraperService, never, ScraperService | RateLimiterService> =
-  Layer.effect(
-    ScraperService,
-    Effect.gen(function* () {
-      const inner = yield* ScraperService
-      const rateLimiter = yield* RateLimiterService
+export const ScraperCacheMiddleware: Layer.Layer<ScraperService, never, ScraperService | RateLimiterService> = Layer.effect(
+  ScraperService,
+  Effect.gen(function* () {
+    const inner = yield* ScraperService
+    const rateLimiter = yield* RateLimiterService
 
-      // Only successes are cached: a zero TTL on failure keeps transient
-      // errors out of the cache.
-      const cache = yield* Cache.makeWith((key: SearchKey) => key.compute, {
-        capacity: CACHE_CAPACITY,
-        timeToLive: (exit) => (Exit.isSuccess(exit) ? CACHE_TTL : Duration.zero),
-      })
-
-      return ScraperService.of({
-        scrape: Effect.fn("Scraper.scrapeCached")(function* (request: ScrapeRequest) {
-          // Rate-limit acquisition happens inside the computed effect so
-          // cache hits never consume a request slot.
-          const fetchRaw = Effect.gen(function* () {
-            yield* rateLimiter.acquire()
-            return yield* inner.scrape(rawRequest(request))
-          })
-
-          const key = new SearchKey(searchId(request), fetchRaw)
-          const hit = yield* Cache.has(cache, key)
-          const result = yield* Cache.get(cache, key)
-          yield* Console.log(hit ? "📦 Cache hit! Using cached results" : "💾 Cached fresh search results")
-
-          // Multi-city results are already exactly the chosen itinerary
-          return request.tripType === "multi-city"
-            ? result
-            : applyFiltersSortAndLimit(result, request.filters, request.sortOption)
-        }),
-      })
+    // Only successes are cached: a zero TTL on failure keeps transient
+    // errors out of the cache.
+    const cache = yield* Cache.makeWith((key: SearchKey) => key.compute, {
+      capacity: CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? CACHE_TTL : Duration.zero),
     })
-  )
+
+    return ScraperService.of({
+      scrape: Effect.fn("Scraper.scrapeCached")(function* (request: ScrapeRequest) {
+        // Rate-limit acquisition happens inside the computed effect so
+        // cache hits never consume a request slot.
+        const fetchRaw = Effect.gen(function* () {
+          yield* rateLimiter.acquire()
+          return yield* inner.scrape(rawRequest(request))
+        })
+
+        const key = new SearchKey(searchId(request), fetchRaw)
+        const hit = yield* Cache.has(cache, key)
+        const result = yield* Cache.get(cache, key)
+        yield* Console.log(hit ? "📦 Cache hit! Using cached results" : "💾 Cached fresh search results")
+
+        // Multi-city results are already exactly the chosen itinerary
+        return request.tripType === "multi-city" ? result : applyFiltersSortAndLimit(result, request.filters, request.sortOption)
+      }),
+    })
+  }),
+)
 
 /**
  * The production adapter: the protobuf scraper behind the caching and
  * rate-limiting middleware. Requires RateLimiterService and HttpClient.
  */
-export const ScraperProductionLive = ScraperCacheMiddleware.pipe(
-  Layer.provide(ScraperProtobufLive)
-)
+export const ScraperProductionLive = ScraperCacheMiddleware.pipe(Layer.provide(ScraperProtobufLive))

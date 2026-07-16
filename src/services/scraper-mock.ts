@@ -14,10 +14,7 @@ import { FlightOption, Result, ScrapeRequest, formatClock12, formatDurationHrMin
 import { applyFiltersSortAndLimit } from "./flight-parsing"
 import { ScraperService } from "./scraper"
 
-const AIRLINES = [
-  "British Airways", "Virgin Atlantic", "American", "Delta", "United",
-  "Lufthansa", "KLM", "Air France", "Iberia", "JetBlue", "Norse Atlantic", "TAP Air Portugal"
-]
+const AIRLINES = ["British Airways", "Virgin Atlantic", "American", "Delta", "United", "Lufthansa", "KLM", "Air France", "Iberia", "JetBlue", "Norse Atlantic", "TAP Air Portugal"]
 
 /** Small deterministic PRNG (mulberry32) seeded from the search route */
 const makeRandom = (seed: number) => () => {
@@ -61,7 +58,7 @@ const mockFlights = (request: ScrapeRequest): FlightOption[] => {
       duration: formatDurationHrMin(durationMinutes + stops * 90),
       stops,
       price: `$${Math.max(90, price)}`,
-      deep_link: "https://www.google.com/travel/flights"
+      deep_link: "https://www.google.com/travel/flights",
     })
   })
 }
@@ -74,6 +71,6 @@ export const ScraperMockLive = Layer.succeed(
       yield* Effect.sleep("400 millis")
       const result = Result.make({ current_price: "typical", flights: mockFlights(request) })
       return applyFiltersSortAndLimit(result, request.filters, request.sortOption)
-    })
-  })
+    }),
+  }),
 )

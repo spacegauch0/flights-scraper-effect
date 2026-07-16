@@ -19,12 +19,7 @@ export interface FlightData {
  * Encodes flight search parameters into Google Flights' tfs parameter
  * The tfs parameter is a Base64-encoded Protocol Buffer matching Python implementation
  */
-export const encodeFlightSearch = (
-  flightData: FlightData[],
-  tripType: TripType,
-  seat: SeatClass,
-  passengers: Passengers
-): Effect.Effect<string, ScraperError> =>
+export const encodeFlightSearch = (flightData: FlightData[], tripType: TripType, seat: SeatClass, passengers: Passengers): Effect.Effect<string, ScraperError> =>
   Effect.try({
     try: () => {
       // Create protobuf schema matching flights.proto from Python implementation
@@ -35,8 +30,8 @@ export const encodeFlightSearch = (
               data: { rule: "repeated", type: "FlightData", id: 3 },
               seat: { type: "Seat", id: 9 },
               passengers: { rule: "repeated", type: "Passenger", id: 8 },
-              trip: { type: "Trip", id: 19 }
-            }
+              trip: { type: "Trip", id: 19 },
+            },
           },
           FlightData: {
             fields: {
@@ -44,13 +39,13 @@ export const encodeFlightSearch = (
               from_flight: { type: "Airport", id: 13 },
               to_flight: { type: "Airport", id: 14 },
               max_stops: { type: "int32", id: 5 },
-              airlines: { rule: "repeated", type: "string", id: 6 }
-            }
+              airlines: { rule: "repeated", type: "string", id: 6 },
+            },
           },
           Airport: {
             fields: {
-              airport: { type: "string", id: 2 }
-            }
+              airport: { type: "string", id: 2 },
+            },
           },
           Seat: {
             values: {
@@ -58,16 +53,16 @@ export const encodeFlightSearch = (
               ECONOMY: 1,
               PREMIUM_ECONOMY: 2,
               BUSINESS: 3,
-              FIRST: 4
-            }
+              FIRST: 4,
+            },
           },
           Trip: {
             values: {
               UNKNOWN_TRIP: 0,
               ROUND_TRIP: 1,
               ONE_WAY: 2,
-              MULTI_CITY: 3
-            }
+              MULTI_CITY: 3,
+            },
           },
           Passenger: {
             values: {
@@ -75,27 +70,27 @@ export const encodeFlightSearch = (
               ADULT: 1,
               CHILD: 2,
               INFANT_IN_SEAT: 3,
-              INFANT_ON_LAP: 4
-            }
-          }
-        }
+              INFANT_ON_LAP: 4,
+            },
+          },
+        },
       })
 
       const Info = root.lookupType("Info")
 
       // Map seat class to enum
       const seatMap: Record<SeatClass, number> = {
-        "economy": 1,
+        economy: 1,
         "premium-economy": 2,
-        "business": 3,
-        "first": 4
+        business: 3,
+        first: 4,
       }
 
       // Map trip type to enum
       const tripMap: Record<TripType, number> = {
         "round-trip": 1,
         "one-way": 2,
-        "multi-city": 3
+        "multi-city": 3,
       }
 
       // Build passenger array
@@ -107,12 +102,12 @@ export const encodeFlightSearch = (
 
       // Build flight data
       // NOTE: Date must keep dashes (YYYY-MM-DD format) - Google Flights expects this format
-      const data = flightData.map(fd => ({
+      const data = flightData.map((fd) => ({
         date: fd.date, // Keep as YYYY-MM-DD format (e.g., "2026-01-25")
         from_flight: { airport: fd.from_airport },
         to_flight: { airport: fd.to_airport },
         max_stops: fd.max_stops,
-        airlines: fd.airlines || []
+        airlines: fd.airlines || [],
       }))
 
       // Create the message
@@ -120,7 +115,7 @@ export const encodeFlightSearch = (
         data,
         seat: seatMap[seat],
         passengers: passengerArray,
-        trip: tripMap[tripType]
+        trip: tripMap[tripType],
       })
 
       // Encode to buffer
@@ -130,42 +125,32 @@ export const encodeFlightSearch = (
       const base64 = Buffer.from(buffer).toString("base64")
 
       // URL-safe base64
-      const urlSafe = base64
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=/g, "")
+      const urlSafe = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 
       return urlSafe
     },
     catch: (error) =>
       new ScraperError({
         reason: "ParsingError",
-        message: `Failed to encode flight search: ${error}`
-      })
+        message: `Failed to encode flight search: ${error}`,
+      }),
   })
 
 /**
  * Constructs the Google Flights search URL with encoded tfs parameter
  */
-export const buildFlightUrl = (
-  flightData: FlightData[],
-  tripType: TripType,
-  seat: SeatClass,
-  passengers: Passengers,
-  currency: string = ""
-): Effect.Effect<string, ScraperError> =>
+export const buildFlightUrl = (flightData: FlightData[], tripType: TripType, seat: SeatClass, passengers: Passengers, currency: string = ""): Effect.Effect<string, ScraperError> =>
   Effect.gen(function* () {
     const tfs = yield* encodeFlightSearch(flightData, tripType, seat, passengers)
     const params = new URLSearchParams({
       tfs,
       hl: "en",
-      tfu: "EgQIABABIgA"
+      tfu: "EgQIABABIgA",
     })
-    
+
     if (currency) {
       params.set("curr", currency)
     }
-    
+
     return `https://www.google.com/travel/flights?${params.toString()}`
   })
-

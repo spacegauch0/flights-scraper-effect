@@ -40,11 +40,7 @@ export const normalizeOpenTuiKey = (event: KeyEvent): ParsedStroke => ({
   meta: event.meta || event.option,
 })
 
-export const useOpenTuiKeymap = <C>(
-  keymap: Keymap<C>,
-  ctx: C,
-  onDisabled?: (reason: string) => void,
-): Dispatcher<C> => {
+export const useOpenTuiKeymap = <C>(keymap: Keymap<C>, ctx: C, onDisabled?: (reason: string) => void): Dispatcher<C> => {
   const ctxRef = useRef(ctx)
   ctxRef.current = ctx
   const onDisabledRef = useRef(onDisabled)
