@@ -5,7 +5,8 @@
  * 
  * @example
  * ```typescript
- * import { Effect, Schema } from "effect"
+ * import { Effect, Layer, Schema } from "effect"
+ * import { FetchHttpClient } from "effect/unstable/http"
  * import { ScraperService, ScraperProtobufLive, ScrapeRequestSchema } from "flights-scraper-effect"
  *
  * const program = Effect.gen(function* () {
@@ -19,7 +20,9 @@
  *   console.log(`Found ${result.flights.length} flights`)
  * })
  *
- * Effect.runPromise(program.pipe(Effect.provide(ScraperProtobufLive)))
+ * Effect.runPromise(program.pipe(
+ *   Effect.provide(ScraperProtobufLive.pipe(Layer.provide(FetchHttpClient.layer)))
+ * ))
  * ```
  */
 

@@ -1,166 +1,176 @@
 # ✈️ Google Flights Scraper (Effect + Protocol Buffers)
 
-A high-performance Google Flights scraper built with **TypeScript Effect** and **Protocol Buffers**, inspired by [fast-flights](https://github.com/AWeirdDev/flights).
+A Google Flights scraper built with **TypeScript Effect v4** and **Protocol Buffers** — no browser required — with a keyboard-driven terminal UI built on **React + OpenTUI**. Inspired by [fast-flights](https://github.com/AWeirdDev/flights).
+
+```
+ ✈ flights  JFK → LHR  ·  one-way · economy · 1 pax
+ ──────────────────────────────────────────────────────────────────────────────────────────
+ ╭─ search ─────────────────────╮  10 flights                                prices typical
+ │                              │
+ │ Route                        │  AIRLINE               │ DEPARTURE│ ARRIVAL     │ DURATION│ STOPS  │ PRICE ▲
+ │ JFK    → LHR                 │  Iberia                │ Thu 13:25│ Fri 04:55 +1│ 15h 30m │ 2 stops│    $146
+ │                              │  United                │ Thu 21:20│ Fri 07:35 +1│ 10h 15m │ 1 stop │    $147
+ │ Trip                         │  ⭐ Air France         │ Thu 20:25│ Fri 07:55 +1│ 11h 30m │ 1 stop │    $267
+ │  ▶ One-way                   │  Delta                 │ Thu 18:15│ Fri 12:25 +1│ 18h 10m │ 1 stop │    $294
+ │    Round-trip                │  Norse Atlantic        │ Thu 18:00│ Fri 06:00 +1│ 12h     │ Nonstop│    $415
+ │    Multi-city                │  ...                   │          │             │         │        │
+ │                              │
+ │ Depart                       │  ▸ Air France · Thu 20:25 → Fri 07:55 +1 · 1 stop · $267
+ │ 2026-01-25                   │
+ ╰──────────────────────────────╯
+ ──────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ rows │ ←→ cols │ space sort │ enter open flight │ g g top │ ctrl+p commands │ esc form
+```
 
 ## 🚀 Features
 
 ### Core Capabilities
-- ✅ **One-way, Round-trip, Multi-city flights**
+- ✅ **One-way, Round-trip, Multi-city flights** — multi-city works by chaining Google's own leg-by-leg shopping endpoint
+- ✅ **Booking options lookup** — resolves the "Book with X" providers (and their prices) for a specific flight, no browser
 - ✅ **All cabin classes** (Economy, Premium Economy, Business, First)
 - ✅ **Multiple passengers** (Adults, Children, Infants in seat/on lap)
 - ✅ **Advanced filtering** (Price, Duration, Airlines, Stops)
 - ✅ **Flexible sorting** (Price, Duration, Airline)
 - ✅ **Price indicator** (Low/Typical/High)
-- ✅ **Detailed flight info** (Departure, Arrival, Duration, Stops, Delays)
 
 ### Production Features 🎯
-- ✅ **Response caching** with TTL (15 min default, 300x faster)
-- ✅ **Rate limiting** (10 req/min, protects against blocking)
-- ✅ **Retry logic** with exponential backoff (3 attempts default)
-- ✅ **Enhanced error messages** with troubleshooting guides
+- ✅ **Response caching** via `effect/Cache` (15 min TTL, keyed by every search parameter, concurrent-request dedupe, failures never cached)
+- ✅ **Rate limiting** (10 req/min sliding window with atomic slot reservation)
+- ✅ **Transient retry** via `HttpClient.retryTransient` (jittered exponential backoff on timeouts/429/5xx)
+- ✅ **HTTP status classification** — a 429 or consent page is a typed error, never an empty result
 
-### Technical Advantages
-- ⚡ **5x faster** than Puppeteer (HTTP requests vs browser automation)
-- 💰 **4x less memory** usage
-- 🌐 **Edge-compatible** (No browser required!)
-- 🔒 **Type-safe** with Effect error handling
-- 📦 **Lightweight** dependencies
-- 🔄 **Production-ready** with built-in reliability features
+### Technical Highlights
+- ⚡ **HTTP requests, not browser automation** — the `tfs` protobuf parameter is encoded directly
+- 🔒 **Type-safe end to end** — searches are validated `ScrapeRequest` values with branded airport codes and dates; failures are typed `ScraperError`s
+- 🧩 **Effect v4 architecture** — `Context.Service` + layers, `Effect.fn`-named operations, swappable scraper implementations (protobuf / production / deterministic mock)
+- ⌨️ **Keymap-as-data TUI** — bindings are values with `when`/`enabled` gates and palette metadata (engine vendored from [ghui](https://github.com/kitlangton/ghui), MIT)
 
 ## 📦 Installation
 
 ```bash
 bun install
-# or
-npm install
 ```
+
+Requires [Bun](https://bun.sh/).
 
 ## 🎯 Quick Start
 
-### Using the CLI
-
-The easiest way to get started is using the command-line interface:
-
 ```bash
-# Launch interactive TUI
+# Interactive TUI (default with no arguments)
 bun run start
 
-# Or use CLI directly
-bun run cli --from JFK --to LHR --depart-date 2026-01-19
+# TUI against a deterministic offline mock — instant, no Google traffic
+bun run tui:mock
+
+# CLI
+bun run cli --from JFK --to LHR --depart-date 2026-08-20
+
+# CLI production mode (caching, rate limiting, retry)
+bun run production --from JFK --to LHR --depart-date 2026-08-20
 ```
 
 ### Using as a Library
 
-You can also use the scraper as a library in your own code:
+Searches are a single validated request. Decode untrusted input against `ScrapeRequestSchema` at the boundary — airport codes and dates are branded types, so an unvalidated string can't reach the scraper:
 
 ```typescript
-import { Effect } from "effect"
-import { ScraperService, ScraperProtobufLive } from "./src"
+import { Effect, Layer, Schema } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
+import { ScraperService, ScraperProtobufLive, ScrapeRequestSchema } from "./src"
 
 const program = Effect.gen(function* () {
+  const request = yield* Schema.decodeUnknownEffect(ScrapeRequestSchema)({
+    from: "JFK",
+    to: "LHR",
+    departDate: "2026-08-20",
+    tripType: "one-way",
+    sortOption: "price-asc",
+    filters: { limit: 10, max_stops: 1 },
+    seat: "economy",
+    passengers: { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
+    currency: "USD"
+  })
+
   const scraper = yield* ScraperService
-  
-  const result = yield* scraper.scrape(
-    "JFK",              // From
-    "LHR",              // To
-    "2026-01-19",       // Depart date
-    "one-way",          // Trip type
-    undefined,          // Return date (for round-trip)
-    "price-asc",        // Sort by price ascending
-    { limit: 10 },      // Filters
-    "economy",          // Seat class
-    { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }, // Passengers
-    ""                  // Currency (empty = default)
-  )
-  
+  const result = yield* scraper.scrape(request)
+
   console.log(`Found ${result.flights.length} flights`)
   console.log(`Price level: ${result.current_price}`)
 })
 
-Effect.runPromise(program.pipe(Effect.provide(ScraperProtobufLive)))
+Effect.runPromise(program.pipe(
+  Effect.provide(ScraperProtobufLive.pipe(Layer.provide(FetchHttpClient.layer)))
+))
 ```
+
+Layers to choose from:
+
+| Layer | What it does |
+|---|---|
+| `ScraperProtobufLive` | Plain HTTP scraping (needs an `HttpClient` layer, e.g. `FetchHttpClient.layer`) |
+| `ScraperProductionLive` | Adds caching, rate limiting, and transient retry (also needs `RateLimiterLive(...)`) |
+| `ScraperMockLive` | Deterministic offline flights, seeded per route — for tests and UI work |
 
 ## 📁 Project Structure
 
 ```
-flights-scraper-effect/
-├── src/
-│   ├── cli/              # Command-line interface
-│   │   └── index.ts      # CLI implementation with argument parsing
-│   ├── tui/              # Terminal User Interface
-│   │   └── index.ts      # Interactive TUI implementation
-│   ├── domain/           # Types, schemas, and errors
-│   │   ├── types.ts      # FlightOption, Result, filters, etc.
-│   │   ├── errors.ts     # ScraperError and error helpers
-│   │   ├── validation.ts # Validation utilities
-│   │   └── index.ts
-│   ├── services/         # Service interface and implementations
-│   │   ├── scraper.ts    # Service interface definition
-│   │   ├── scraper-protobuf.ts    # HTTP-based implementation
-│   │   ├── scraper-production.ts  # Production with cache/retry/rate-limit
-│   │   └── index.ts
-│   ├── utils/            # Utility modules
-│   │   ├── cache.ts      # Response caching
-│   │   ├── rate-limiter.ts  # Rate limiting
-│   │   ├── retry.ts      # Retry with exponential backoff
-│   │   ├── protobuf.ts   # Protocol buffer encoding
-│   │   └── index.ts
-│   ├── cli.ts            # Main entry point (routes to CLI or TUI)
-│   └── index.ts          # Library exports
-├── docs/                 # Documentation
-│   ├── MIGRATION.md      # Puppeteer → Protobuf migration
-│   ├── PRODUCTION.md     # Production features guide
-│   ├── IMPLEMENTATION_STATUS.md  # Feature comparison
-│   ├── EFFECT_BEST_PRACTICES.md  # Effect best practices guide
-│   └── SUMMARY.md        # Implementation summary
-├── package.json
-├── tsconfig.json
-└── README.md
+src/
+├── cli.ts                # Entry point (routes to CLI or TUI)
+├── index.ts              # Library exports
+├── domain/               # Schemas, branded types, typed errors
+│   ├── types.ts          # ScrapeRequest, FlightOption, Result, filters…
+│   └── errors.ts         # ScraperError
+├── services/
+│   ├── scraper.ts        # ScraperService interface (Context.Service)
+│   ├── scraper-protobuf.ts    # HTTP implementation
+│   ├── scraper-production.ts  # + effect/Cache, rate limit, retryTransient
+│   ├── scraper-mock.ts        # Deterministic offline implementation
+│   ├── flight-parsing.ts      # HTML parsing, filtering, sorting
+│   ├── search-page.ts         # Shared search-page fetch
+│   ├── multi-city.ts          # Leg-by-leg GetShoppingResults chain
+│   └── booking-options.ts     # "Book with X" provider lookup
+├── utils/
+│   ├── protobuf.ts       # tfs parameter encoding
+│   └── rate-limiter.ts   # Sliding-window rate limiter service
+└── tui/                  # React + OpenTUI terminal interface
+    ├── index.tsx         # runTui entry (renderer + ManagedRuntime)
+    ├── app/              # useAppShell (state/actions) + pure components
+    ├── keymap/           # Vendored keymap engine (bindings as data)
+    ├── keymaps.ts        # Form/table/palette bindings
+    ├── hints.ts          # Contextual footer hints
+    └── format.ts         # Semantic colors, columns, formatters
+test/                     # bun test: keymap, hints, formats + full-app
+                          # frame tests on OpenTUI's in-memory renderer
 ```
 
-## 🔧 Configuration
+## 🖥️ Terminal User Interface
 
-### Trip Types
-- `"one-way"` - One-way flight
-- `"round-trip"` - Round-trip flight (requires `returnDate`)
-- `"multi-city"` - Multi-city (not fully implemented)
+Built with [OpenTUI](https://github.com/anomalyco/opentui)'s React renderer. All state lives in one shell hook; every keyboard action is a data-described binding, which also powers the command palette and the contextual footer hints.
 
-### Seat Classes
-- `"economy"` - Economy class
-- `"premium-economy"` - Premium Economy
-- `"business"` - Business class
-- `"first"` - First class
+**Features:**
+- Departure-board results: fixed-width 24h times, colored stops, price-level verdict, whole-row selection
+- `ctrl+p` command palette — filterable, lists each mode's commands with their keys; unavailable commands show *why*
+- Interactive multi-city: pick each leg from real options, exactly like Google's wizard
+- Opens the cheapest "Book with X" provider link for the selected flight in your browser
+- Mock mode (`bun run tui:mock`) for instant offline iteration
 
-### Passengers
-```typescript
-{
-  adults: number,           // Ages 18+
-  children: number,         // Ages 2-11
-  infants_in_seat: number,  // Under 2, with seat
-  infants_on_lap: number    // Under 2, on lap
-}
-```
+**Keys (form):** `enter` search · `tab`/`shift+tab` fields · `ctrl+r` results · `ctrl+a`/`ctrl+x` add/drop leg (multi-city) · `ctrl+p` commands · `ctrl+c` quit
 
-### Filters
-```typescript
-{
-  maxPrice?: number,             // Maximum price
-  minPrice?: number,             // Minimum price
-  maxDurationMinutes?: number,   // Maximum duration
-  airlines?: string[],           // Filter by airlines
-  nonstopOnly?: boolean,         // Only nonstop flights
-  max_stops?: number,            // Max stops (0, 1, 2)
-  limit?: number | "all"         // Result limit
-}
-```
+**Keys (results):** `↑↓`/`j k` rows · `←→`/`h l` columns · `g g`/`G` first/last · `space`/`s` sort · `enter`/`o` open or choose leg · `esc`/`q`/`tab` back
 
-### Sort Options
-- `"price-asc"` - Price: low to high
-- `"price-desc"` - Price: high to low
-- `"duration-asc"` - Duration: shortest to longest
-- `"duration-desc"` - Duration: longest to shortest
-- `"airline"` - Airline: alphabetical
-- `"none"` - No sorting
+## 🔧 CLI Reference
+
+**Required:** `--from/-f`, `--to/-t`, `--depart-date/-d` (YYYY-MM-DD)
+
+**Optional:**
+- `--return-date, -r <date>` · `--trip-type <one-way|round-trip|multi-city>`
+- `--sort, -s <price-asc|price-desc|duration-asc|duration-desc|airline|none>` (default: `price-asc`)
+- `--seat <economy|premium-economy|business|first>` · `--adults/-a`, `--children/-c`, `--infants-in-seat`, `--infants-on-lap`
+- `--max-price`, `--min-price`, `--max-duration <minutes>`, `--max-stops <0|1|2>`, `--nonstop-only`, `--airlines <list>`
+- `--limit, -l <number|all>` (default: 10) · `--currency <code>`
+- `--production, -p` · `--json, -j` · `--help, -h`
+
+Invalid input fails fast with the schema's message (airport codes must be 3-letter IATA, dates `YYYY-MM-DD`).
 
 ## 📊 Output Format
 
@@ -170,161 +180,42 @@ flights-scraper-effect/
   flights: [
     {
       is_best?: boolean,
-      name: string,              // Airline name
-      departure: string,         // Departure time
-      arrival: string,           // Arrival time
-      arrival_time_ahead?: string, // "+1 day" if next day
-      duration: string,          // "12 hr 30 min"
-      stops: number,             // Number of stops
-      delay?: string,            // Delay info
-      price: string              // "ARS 299,733"
+      name: string,                 // Airline name
+      departure: string,            // "8:20 AM on Wed, Jan 14"
+      arrival: string,
+      arrival_time_ahead?: string,  // "+1" if next day
+      duration: string,             // "12 hr 30 min"
+      stops: number,
+      delay?: string,
+      price: string,                // "$481"
+      deep_link?: string,           // Google Flights booking URL when found
+      flight_number?: string        // e.g. "BA178" - used for booking lookup
     }
   ]
 }
 ```
 
-## 🧪 Running
-
-### Terminal User Interface (TUI)
-
-Launch the interactive TUI (default when no arguments provided):
+## 🧪 Development
 
 ```bash
-bun run start
-# or
-bun run tui
-# or explicitly
-bun run src/cli.ts --tui
-```
-
-### Command-Line Interface (CLI)
-
-Use the CLI for programmatic access and automation:
-
-```bash
-# Basic CLI usage
-bun run cli --from JFK --to LHR --depart-date 2026-01-19
-
-# Production mode (with caching, rate limiting, retry)
-bun run production --from LAX --to NRT --depart-date 2026-01-19
-
-# JSON output
-bun run cli --from AEP --to SCL --depart-date 2026-01-19 --json
-
-# Full example with filters
-bun run cli \
-  --from JFK \
-  --to LHR \
-  --depart-date 2026-01-19 \
-  --return-date 2026-01-26 \
-  --trip-type round-trip \
-  --seat business \
-  --adults 2 \
-  --max-stops 1 \
-  --limit 20 \
-  --currency USD
-```
-
-### CLI Options
-
-**Required:**
-- `--from, -f <code>` - Origin airport code (e.g., JFK)
-- `--to, -t <code>` - Destination airport code (e.g., LHR)
-- `--depart-date, -d <date>` - Departure date (YYYY-MM-DD)
-
-**Optional:**
-- `--return-date, -r <date>` - Return date for round-trip (YYYY-MM-DD)
-- `--trip-type <type>` - Trip type: `one-way`, `round-trip`, `multi-city` (default: `one-way`)
-- `--sort, -s <option>` - Sort: `price-asc`, `price-desc`, `duration-asc`, `duration-desc`, `airline`, `none` (default: `price-asc`)
-- `--seat <class>` - Seat class: `economy`, `premium-economy`, `business`, `first` (default: `economy`)
-- `--adults, -a <number>` - Number of adults (default: 1)
-- `--children, -c <number>` - Number of children (default: 0)
-- `--infants-in-seat <number>` - Infants in seat (default: 0)
-- `--infants-on-lap <number>` - Infants on lap (default: 0)
-- `--max-price <number>` - Maximum price filter
-- `--min-price <number>` - Minimum price filter
-- `--max-duration <minutes>` - Maximum duration in minutes
-- `--max-stops <0|1|2>` - Maximum number of stops (default: 2)
-- `--nonstop-only` - Only show nonstop flights
-- `--airlines <list>` - Comma-separated list of airlines
-- `--limit, -l <number|all>` - Limit number of results (default: 10)
-- `--currency <code>` - Currency code (e.g., USD, EUR)
-- `--production, -p` - Use production mode (caching, rate limiting, retry)
-- `--json, -j` - Output results as JSON
-- `--help, -h` - Show help message
-
-## 🖥️ Terminal User Interface (TUI)
-
-The project includes an interactive terminal UI built with [OpenTUI](https://github.com/sst/opentui):
-
-![TUI Screenshot](docs/tui-preview.png)
-
-**Features:**
-- Interactive form with airport inputs
-- Trip type selection (One-way / Round-trip)
-- Seat class selection (Economy, Premium Economy, Business, First)
-- Max stops filter
-- Real-time flight search results
-- Sortable table view with keyboard navigation
-- Color-coded price level indicators
-- Mouse support
-- Direct links to Google Flights booking pages
-
-**Controls:**
-- `Enter` - Search for flights (form mode) / Open selected flight (table mode)
-- `Tab` / `Shift+Tab` - Navigate between form fields
-- `Ctrl+R` - Focus results table
-- `↑/↓` - Navigate table rows (table mode)
-- `←/→` - Navigate table columns (table mode)
-- `Space` - Sort by selected column (table mode)
-- `Esc` - Exit table mode, return to form
-- `Ctrl+C` - Exit application
-
-## 📝 Example Configurations
-
-### Business Class Round-trip for Family
-```typescript
-const result = yield* scraper.scrape(
-  "LAX", "NRT", "2026-01-19", "round-trip", "2026-01-26",
-  "price-asc",
-  { max_stops: 1, limit: 20 },
-  "business",
-  { adults: 2, children: 1, infants_in_seat: 0, infants_on_lap: 1 },
-  "USD"
-)
-```
-
-### Budget Economy with Filters
-```typescript
-const result = yield* scraper.scrape(
-  "ORD", "CDG", "2026-01-19", "one-way", undefined,
-  "price-asc",
-  { 
-    maxPrice: 500, 
-    maxDurationMinutes: 12 * 60,
-    airlines: ["United", "American"],
-    limit: 15
-  },
-  "economy",
-  { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 },
-  "USD"
-)
+bun run typecheck   # tsc --noEmit
+bun run test        # 26 tests: keymap dispatch, hints, formatters, and
+                    # full-app TUI frame tests (in-memory renderer + mock keys)
+bun run tui:mock    # develop the TUI offline against deterministic data
 ```
 
 ## 📚 Tech Stack
 
-- **[Effect](https://effect.website/)** - Functional programming for TypeScript with type-safe error handling
-- **[@effect/platform](https://effect.website/docs/platform)** - Platform abstractions (HTTP client)
-- **[@effect/schema](https://effect.website/docs/schema)** - Schema validation and type safety
-- **[protobufjs](https://github.com/protobufjs/protobuf.js/)** - Protocol Buffer encoding
-- **[Cheerio](https://cheerio.js.org/)** - HTML parsing
-- **[OpenTUI](https://github.com/sst/opentui)** - Terminal user interfaces
-- **[Bun](https://bun.sh/)** - Fast JavaScript runtime
+- **[Effect v4](https://effect.website/)** — services/layers, Schema (built into core), Cache, typed errors, `HttpClient`
+- **[React 19](https://react.dev/) + [@opentui/react](https://github.com/anomalyco/opentui)** — terminal UI renderer
+- **[protobufjs](https://github.com/protobufjs/protobuf.js/)** — `tfs` parameter encoding
+- **[Cheerio](https://cheerio.js.org/)** — HTML parsing
+- **[Bun](https://bun.sh/)** — runtime and test runner
 
 ## 🤝 Credits
 
 - Inspired by [fast-flights](https://github.com/AWeirdDev/flights) by @AWeirdDev
-- Reverse engineering insights from the Python implementation
+- Keymap engine and TUI architecture patterns from [ghui](https://github.com/kitlangton/ghui) by @kitlangton (MIT)
 
 ## 📄 License
 
@@ -332,7 +223,7 @@ MIT
 
 ## 🐛 Known Limitations
 
-1. **JavaScript Data Extraction**: Some flight details may be incomplete depending on Google's response format
-2. **Rate Limiting**: Google may rate-limit excessive requests
-3. **Price Currency**: Prices are returned in the currency Google serves (may vary by region)
-4. **Multi-city**: Not fully tested yet
+1. **Google's page structure** can change; parsing may need updating when it does
+2. **Rate limiting**: Google may throttle excessive requests — production mode's limiter is deliberately conservative
+3. **Currency**: prices come back in whatever currency Google serves unless `--currency` is set
+4. **Board width**: the TUI's full price column needs a ≥120-column terminal
