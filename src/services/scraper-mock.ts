@@ -10,7 +10,7 @@
  */
 
 import { Effect, Layer } from "effect"
-import { FlightOption, Result, ScrapeRequest } from "../domain"
+import { FlightOption, Result, ScrapeRequest, formatClock12, formatDurationHrMin } from "../domain"
 import { applyFiltersSortAndLimit } from "./flight-parsing"
 import { ScraperService } from "./scraper"
 
@@ -38,11 +38,7 @@ const stringSeed = (value: string): number => {
 
 const formatClock = (minutesFromMidnight: number): string => {
   const clamped = ((minutesFromMidnight % 1440) + 1440) % 1440
-  const hours24 = Math.floor(clamped / 60)
-  const minutes = clamped % 60
-  const period = hours24 >= 12 ? "PM" : "AM"
-  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12
-  return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`
+  return formatClock12(Math.floor(clamped / 60), clamped % 60)
 }
 
 const mockFlights = (request: ScrapeRequest): FlightOption[] => {
@@ -54,8 +50,6 @@ const mockFlights = (request: ScrapeRequest): FlightOption[] => {
     const durationMinutes = 6 * 60 + Math.floor(random() * 150) * 5
     const stops = random() < 0.45 ? 0 : random() < 0.8 ? 1 : 2
     const arriveMinutes = departMinutes + durationMinutes + stops * 90
-    const hours = Math.floor((durationMinutes + stops * 90) / 60)
-    const minutes = (durationMinutes + stops * 90) % 60
     const price = 180 + Math.floor(random() * 24) * 25 + stops * -40 + Math.floor(random() * 30)
 
     return FlightOption.make({
@@ -64,7 +58,7 @@ const mockFlights = (request: ScrapeRequest): FlightOption[] => {
       departure: `${formatClock(departMinutes)} on Thu, Aug 20`,
       arrival: `${formatClock(arriveMinutes)} on ${arriveMinutes >= 1440 ? "Fri, Aug 21" : "Thu, Aug 20"}`,
       arrival_time_ahead: arriveMinutes >= 1440 ? "+1" : undefined,
-      duration: minutes > 0 ? `${hours} hr ${minutes} min` : `${hours} hr`,
+      duration: formatDurationHrMin(durationMinutes + stops * 90),
       stops,
       price: `$${Math.max(90, price)}`,
       deep_link: "https://www.google.com/travel/flights"

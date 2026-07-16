@@ -4,7 +4,7 @@
  */
 
 import type { FlightOption } from "../domain"
-import { parseDurationToMinutes, parsePrice } from "../services/flight-parsing"
+import { parseDurationToMinutes, parsePrice } from "../domain"
 
 /**
  * Semantic color palette: names describe roles, not hues, so a future theme

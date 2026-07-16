@@ -3,7 +3,7 @@
  * Inspired by: https://github.com/AWeirdDev/flights
  */
 
-import { Effect, Layer, Console } from "effect"
+import { Effect, Layer, Console, Schedule } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { ScrapeRequest, ScraperErrors } from "../domain"
 import { ScraperService } from "./scraper"
@@ -19,9 +19,16 @@ import { extractFlights, fetchSearchPage } from "./search-page"
 export const ScraperProtobufLive = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
-    // Classify HTTP status up front: a 429/5xx/consent page must fail as a
-    // typed error instead of parsing as an empty flight list.
-    const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
+    // Classify HTTP status up front (a 429/5xx/consent page must fail as a
+    // typed error instead of parsing as an empty flight list) and retry
+    // transient failures with jittered exponential backoff.
+    const httpClient = (yield* HttpClient.HttpClient).pipe(
+      HttpClient.filterStatusOk,
+      HttpClient.retryTransient({
+        times: 3,
+        schedule: Schedule.exponential("1 second").pipe(Schedule.jittered)
+      })
+    )
 
     return ScraperService.of({
       scrape: Effect.fn("Scraper.scrape")(

@@ -119,15 +119,17 @@ src/
 ├── index.ts              # Library exports
 ├── domain/               # Schemas, branded types, typed errors
 │   ├── types.ts          # ScrapeRequest, FlightOption, Result, filters…
+│   ├── values.ts         # FlightDesignator, price/duration/clock conventions
 │   └── errors.ts         # ScraperError
 ├── services/
 │   ├── scraper.ts        # ScraperService interface (Context.Service)
-│   ├── scraper-protobuf.ts    # HTTP implementation
-│   ├── scraper-production.ts  # + effect/Cache, rate limit, retryTransient
+│   ├── scraper-protobuf.ts    # HTTP implementation (status-checked, retrying)
+│   ├── scraper-production.ts  # Caching + rate-limit middleware over any adapter
 │   ├── scraper-mock.ts        # Deterministic offline implementation
+│   ├── google-rpc.ts          # Transport for Google's private frontend RPC
 │   ├── flight-parsing.ts      # HTML parsing, filtering, sorting
 │   ├── search-page.ts         # Shared search-page fetch
-│   ├── multi-city.ts          # Leg-by-leg GetShoppingResults chain
+│   ├── multi-city.ts          # Step-based multi-city picker
 │   └── booking-options.ts     # "Book with X" provider lookup
 ├── utils/
 │   ├── protobuf.ts       # tfs parameter encoding
@@ -199,8 +201,10 @@ Invalid input fails fast with the schema's message (airport codes must be 3-lett
 
 ```bash
 bun run typecheck   # tsc --noEmit
-bun run test        # 26 tests: keymap dispatch, hints, formatters, and
-                    # full-app TUI frame tests (in-memory renderer + mock keys)
+bun run test        # 59 tests: protobuf goldens, HTML-parsing fixtures, RPC
+                    # envelope, cache middleware, multi-city picker over a fake
+                    # transport, rate limiter, keymap dispatch, hints,
+                    # formatters, and full-app TUI frame tests
 bun run tui:mock    # develop the TUI offline against deterministic data
 ```
 

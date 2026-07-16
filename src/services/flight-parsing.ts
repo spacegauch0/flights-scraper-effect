@@ -5,7 +5,7 @@
  */
 
 import * as cheerio from "cheerio"
-import { FlightOption, Result, SortOption, FlightFilters } from "../domain"
+import { FlightOption, Result, SortOption, FlightFilters, parseDurationToMinutes, parsePrice } from "../domain"
 
 /**
  * Google embeds a protobuf-encoded "booking token" per flight in the page's
@@ -264,22 +264,6 @@ export const parseHtmlFallback = (html: string): Result => {
     flights
   })
 }
-
-/**
- * Parses a duration string like "12 hr 30 min" into total minutes
- */
-export const parseDurationToMinutes = (duration: string): number => {
-  const hourMatch = duration.match(/(\d+)\s*hr/)
-  const minMatch = duration.match(/(\d+)\s*min/)
-  const hours = hourMatch ? parseInt(hourMatch[1]) : 0
-  const minutes = minMatch ? parseInt(minMatch[1]) : 0
-  return hours * 60 + minutes
-}
-
-/**
- * Parses a formatted price string (e.g. "$299,733") into a plain number
- */
-export const parsePrice = (price: string): number => parseFloat(price.replace(/[^0-9.-]/g, "")) || 0
 
 /**
  * Sorts flights based on the specified option

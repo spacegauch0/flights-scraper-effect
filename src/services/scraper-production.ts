@@ -1,16 +1,20 @@
 /**
- * Production-ready scraper with caching, rate limiting, and retry logic
+ * Production middleware for the ScraperService seam: wraps ANY inner
+ * ScraperService with response caching and rate limiting. The inner adapter
+ * owns fetching and parsing; this layer owns when not to fetch.
+ *
+ * The cache stores the raw (pre client-side filtering) result set, keyed by
+ * every fetch-affecting parameter, and post-processing (price/duration
+ * filters, sorting, limit) is applied per call - so two searches differing
+ * only in their client-side filters share one fetch.
  */
 
-import { Cache, Console, Duration, Effect, Equal, Exit, Hash, Layer, Schedule } from "effect"
-import { HttpClient } from "effect/unstable/http"
-import { ScraperService } from "./scraper"
-import { Result, ScrapeRequest, ScraperError, ScraperErrors } from "../domain"
-import { buildFlightUrl, FlightData as ProtobufFlightData } from "../utils/protobuf"
+import { Cache, Console, Duration, Effect, Equal, Exit, Hash, Layer } from "effect"
+import { Result, ScrapeRequest, ScraperError } from "../domain"
 import { RateLimiterService } from "../utils/rate-limiter"
 import { applyFiltersSortAndLimit } from "./flight-parsing"
-import { fetchMultiCityItinerary } from "./multi-city"
-import { extractFlights, fetchSearchPage } from "./search-page"
+import { ScraperService } from "./scraper"
+import { ScraperProtobufLive } from "./scraper-protobuf"
 
 const CACHE_CAPACITY = 100
 const CACHE_TTL = Duration.minutes(15)
@@ -58,105 +62,64 @@ const searchId = (request: ScrapeRequest): string => {
 }
 
 /**
- * Production-ready scraper implementation with caching, rate limiting, and retry
- * Requires RateLimiterService and HttpClient to be provided via Layer
+ * The request the inner adapter fetches with: fetch-affecting filters only
+ * (max_stops and airlines are encoded into the search itself), no sorting,
+ * no client-side narrowing - so the cached result is the full raw set.
  */
-export const ScraperProductionLive = Layer.effect(
-  ScraperService,
-  Effect.gen(function* () {
-    const rateLimiter = yield* RateLimiterService
+const rawRequest = (request: ScrapeRequest): ScrapeRequest => ({
+  ...request,
+  sortOption: "none",
+  filters: {
+    ...(request.filters.max_stops !== undefined && { max_stops: request.filters.max_stops }),
+    ...(request.filters.airlines !== undefined && { airlines: [...request.filters.airlines] }),
+  },
+})
 
-    // Classify status before parsing (a 429/5xx/consent page is a typed
-    // failure, not an empty flight list) and retry transient failures with
-    // jittered exponential backoff.
-    const httpClient = (yield* HttpClient.HttpClient).pipe(
-      HttpClient.filterStatusOk,
-      HttpClient.retryTransient({
-        times: 3,
-        schedule: Schedule.exponential("1 second").pipe(Schedule.jittered)
+/**
+ * Caching + rate limiting around whatever ScraperService it is given.
+ * Compose with an inner adapter via Layer.provide.
+ */
+export const ScraperCacheMiddleware: Layer.Layer<ScraperService, never, ScraperService | RateLimiterService> =
+  Layer.effect(
+    ScraperService,
+    Effect.gen(function* () {
+      const inner = yield* ScraperService
+      const rateLimiter = yield* RateLimiterService
+
+      // Only successes are cached: a zero TTL on failure keeps transient
+      // errors out of the cache.
+      const cache = yield* Cache.makeWith((key: SearchKey) => key.compute, {
+        capacity: CACHE_CAPACITY,
+        timeToLive: (exit) => (Exit.isSuccess(exit) ? CACHE_TTL : Duration.zero),
       })
-    )
 
-    // Raw (pre client-side filtering) results per search. Only successes are
-    // cached: a zero TTL on failure keeps transient errors out of the cache.
-    const cache = yield* Cache.makeWith((key: SearchKey) => key.compute, {
-      capacity: CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? CACHE_TTL : Duration.zero)
-    })
+      return ScraperService.of({
+        scrape: Effect.fn("Scraper.scrapeCached")(function* (request: ScrapeRequest) {
+          // Rate-limit acquisition happens inside the computed effect so
+          // cache hits never consume a request slot.
+          const fetchRaw = Effect.gen(function* () {
+            yield* rateLimiter.acquire()
+            return yield* inner.scrape(rawRequest(request))
+          })
 
-    return ScraperService.of({
-      scrape: Effect.fn("Scraper.scrape")(function* (request: ScrapeRequest) {
-        const { from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency, additionalLegs } = request
+          const key = new SearchKey(searchId(request), fetchRaw)
+          const hit = yield* Cache.has(cache, key)
+          const result = yield* Cache.get(cache, key)
+          yield* Console.log(hit ? "📦 Cache hit! Using cached results" : "💾 Cached fresh search results")
 
-        // Validate cross-field rules the schema can't express
-        if (tripType === "round-trip" && !returnDate) {
-          return yield* Effect.fail(ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights"))
-        }
-        if (tripType === "multi-city" && (!additionalLegs || additionalLegs.length === 0)) {
-          return yield* Effect.fail(ScraperErrors.invalidInput("additionalLegs", "At least one additional leg is required for multi-city flights."))
-        }
-
-        // Rate-limit acquisition happens inside the computed effect so cache
-        // hits never consume a request slot. Multi-city is rate-limited as a
-        // single unit rather than per sub-request.
-        const fetchFresh: Effect.Effect<Result, ScraperError, HttpClient.HttpClient> =
-          tripType === "multi-city" && additionalLegs
-            ? Effect.gen(function* () {
-                yield* rateLimiter.acquire()
-                yield* Console.log(`🚀 Scraping multi-city itinerary (${additionalLegs.length + 1} legs)...`)
-                return yield* fetchMultiCityItinerary({ from, to, departDate, additionalLegs, seat, passengers, currency })
-              })
-            : Effect.gen(function* () {
-                yield* rateLimiter.acquire()
-
-                const flightData: ProtobufFlightData[] = [{
-                  date: departDate,
-                  from_airport: from,
-                  to_airport: to,
-                  max_stops: filters.max_stops,
-                  airlines: filters.airlines
-                }]
-
-                if (tripType === "round-trip" && returnDate) {
-                  flightData.push({
-                    date: returnDate,
-                    from_airport: to,
-                    to_airport: from,
-                    max_stops: filters.max_stops,
-                    airlines: filters.airlines
-                  })
-                }
-
-                const url = yield* buildFlightUrl(flightData, tripType, seat, passengers, currency ?? "")
-
-                yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
-
-                const html = yield* fetchSearchPage(url)
-                yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
-
-                const result = yield* extractFlights(html)
-                yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
-
-                if (result.current_price) {
-                  yield* Console.log(`💰 Price indicator: ${result.current_price}`)
-                }
-
-                return result
-              })
-
-        const key = new SearchKey(
-          searchId(request),
-          fetchFresh.pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-        )
-
-        const hit = yield* Cache.has(cache, key)
-        const result = yield* Cache.get(cache, key)
-        yield* Console.log(hit ? "📦 Cache hit! Using cached results" : "💾 Cached fresh search results")
-
-        return tripType === "multi-city"
-          ? result
-          : applyFiltersSortAndLimit(result, filters, sortOption)
+          // Multi-city results are already exactly the chosen itinerary
+          return request.tripType === "multi-city"
+            ? result
+            : applyFiltersSortAndLimit(result, request.filters, request.sortOption)
+        }),
       })
     })
-  })
+  )
+
+/**
+ * The production adapter: the protobuf scraper behind the caching and
+ * rate-limiting middleware. Requires RateLimiterService and HttpClient.
+ */
+export const ScraperProductionLive = ScraperCacheMiddleware.pipe(
+  Layer.provide(ScraperProtobufLive)
 )

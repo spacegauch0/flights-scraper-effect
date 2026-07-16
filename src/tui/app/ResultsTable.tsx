@@ -59,14 +59,14 @@ const CenteredNote = ({ children }: { readonly children: React.ReactNode }) => (
 
 export const ResultsTable = ({ shell }: { readonly shell: AppShell }) => {
   const { resultsView, sortedFlights, route } = shell
-  const { table, priceLevel, errorMessage, multiCityFlow, multiCityLegs } = shell.state
+  const { table, priceLevel, errorMessage, multiCityFlow, multiCityItinerary } = shell.state
 
   // Title bar: what this result set IS. Left: count or the multi-city step;
   // right: the route-level price verdict.
   const flightCount = `${sortedFlights.length} flight${sortedFlights.length !== 1 ? "s" : ""}`
   const boardTitle = multiCityFlow
-    ? `Pick a flight · leg ${multiCityFlow.session.legIndex + 1} of ${multiCityFlow.session.legs.length}`
-    : multiCityLegs
+    ? `Pick a flight · leg ${multiCityFlow.legIndex + 1} of ${multiCityFlow.legCount}`
+    : multiCityItinerary
       ? `Itinerary · ${sortedFlights.length} legs`
       : flightCount
 

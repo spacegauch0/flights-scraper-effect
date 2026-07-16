@@ -2,7 +2,8 @@
  * Keymap engine: bindings as data, state as input.
  *
  * Vendored from ghui's `@ghui/keymap` package (github.com/kitlangton/ghui,
- * MIT license) minus its React adapter. Renderer-agnostic and dependency-free:
+ * MIT license), trimmed to the surface this app uses. Renderer-agnostic and
+ * dependency-free:
  *
  * - A `Binding` is a value: key sequence + `when`/`enabled` gates + action +
  *   palette metadata. `enabled` may return a reason string ("No row selected"),
@@ -49,5 +50,3 @@ export {
 	type PureDispatchOptions,
 	pureTick,
 } from "./pure-dispatch"
-export { type Scrollable, scrollCommands } from "./scroll"
-export { type BindingSnapshot, snapshot } from "./snapshot"

@@ -8,10 +8,11 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { Result, ScraperError, ScraperErrors } from "../domain"
 import { parseHtmlFallback } from "./flight-parsing"
+import { USER_AGENT } from "./google-rpc"
 
 /** Browser-like headers Google expects on a search-page request */
 export const BROWSER_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "User-Agent": USER_AGENT,
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
   "Accept-Encoding": "gzip, deflate, br",

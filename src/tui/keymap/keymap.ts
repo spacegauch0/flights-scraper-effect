@@ -93,11 +93,6 @@ export class Keymap<C> {
 		return new Keymap<C2>(this.bindings.map((b) => liftBindingScope(b, project)))
 	}
 
-	/** @deprecated Use {@link scope}. Same behavior; clearer name. */
-	contramapMaybe<C2>(project: (ctx: C2) => C | null): Keymap<C2> {
-		return this.scope(project)
-	}
-
 	restrict(predicate: (ctx: C) => boolean): Keymap<C> {
 		return new Keymap<C>(this.bindings.map((b) => ({
 			...b,

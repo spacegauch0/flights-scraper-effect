@@ -1,8 +1,11 @@
 /**
- * Google Flights Scraper - Main exports
- * 
- * A high-performance Google Flights scraper built with TypeScript Effect and Protocol Buffers.
- * 
+ * Google Flights Scraper - public library surface.
+ *
+ * Intentional exports only: the ScraperService seam with its adapters, the
+ * request/response schemas needed to use it, the booking-options and
+ * multi-city extensions, and the rate limiter the production adapter needs.
+ * Parsing internals, page fetching, and TUI modules are implementation.
+ *
  * @example
  * ```typescript
  * import { Effect, Layer, Schema } from "effect"
@@ -26,12 +29,35 @@
  * ```
  */
 
-// Domain exports
-export * from "./domain"
+// The scraper seam and its adapters
+export { ScraperService } from "./services/scraper"
+export { ScraperProtobufLive } from "./services/scraper-protobuf"
+export { ScraperProductionLive } from "./services/scraper-production"
+export { ScraperMockLive } from "./services/scraper-mock"
 
-// Service exports
-export * from "./services"
+// Request/response contract
+export {
+  ScrapeRequestSchema, type ScrapeRequest,
+  FlightOption, Result, BookingOption,
+  FlightFiltersSchema, type FlightFilters,
+  PassengersSchema, type Passengers,
+  TripTypeSchema, type TripType,
+  SeatClassSchema, type SeatClass,
+  SortOptionSchema, type SortOption,
+  AirportCodeSchema, type AirportCode,
+  DateStringSchema, type DateString,
+  FlightLegSchema, type FlightLeg,
+} from "./domain/types"
+export { ScraperError } from "./domain/errors"
 
-// Utility exports
-export * from "./utils"
+// Booking options for a specific flight
+export { fetchBookingOptions, type BookingOptionsParams } from "./services/booking-options"
 
+// Multi-city
+export { fetchMultiCityItinerary, type MultiCityParams } from "./services/multi-city"
+
+// Rate limiter (required by ScraperProductionLive)
+export {
+  RateLimiterService, RateLimiterLive, RateLimiterDisabled,
+  defaultRateLimiterConfig, type RateLimiterConfig,
+} from "./utils/rate-limiter"

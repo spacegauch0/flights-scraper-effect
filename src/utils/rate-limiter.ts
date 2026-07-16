@@ -39,12 +39,11 @@ type AcquireDecision =
   | { readonly granted: false; readonly waitMs: number }
 
 /**
- * Rate limiter service interface
+ * Rate limiter service interface: acquire a request slot or fail with a
+ * typed RateLimitExceeded error.
  */
 export class RateLimiterService extends Context.Service<RateLimiterService, {
   readonly acquire: () => Effect.Effect<void, ScraperError>
-  readonly reset: () => Effect.Effect<void>
-  readonly getStats: () => Effect.Effect<{ requests: number; windowMs: number }>
 }>()("RateLimiterService") {}
 
 /**
@@ -87,22 +86,7 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
         }
       })
 
-      return RateLimiterService.of({
-        acquire,
-
-        reset: () => Ref.set(stateRef, { requests: [], last: 0 }),
-
-        getStats: () =>
-          Effect.gen(function* () {
-            const state = yield* Ref.get(stateRef)
-            const now = yield* Clock.currentTimeMillis
-            const windowStart = now - windowMs
-            return {
-              requests: state.requests.filter((t) => t > windowStart).length,
-              windowMs
-            }
-          })
-      })
+      return RateLimiterService.of({ acquire })
     })
   )
 
@@ -112,8 +96,6 @@ export const RateLimiterLive = (config: RateLimiterConfig = defaultRateLimiterCo
 export const RateLimiterDisabled = Layer.succeed(
   RateLimiterService,
   RateLimiterService.of({
-    acquire: () => Effect.void,
-    reset: () => Effect.void,
-    getStats: () => Effect.succeed({ requests: 0, windowMs: 0 })
+    acquire: () => Effect.void
   })
 )

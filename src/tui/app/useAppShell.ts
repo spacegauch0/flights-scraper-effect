@@ -12,8 +12,8 @@ import { Effect, Exit, ManagedRuntime, Schema } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  ScraperService, fetchBookingOptions,
-  startMultiCitySession, fetchCurrentLegOptions, chooseLegOption, isMultiCitySessionComplete
+  ScraperService, cheapestBookingOption, fetchBookingOptions,
+  startMultiCityPicker, chooseMultiCityOption, type ItineraryLeg, type PickLeg
 } from "../../services"
 import { ScrapeRequestSchema, ScraperErrors } from "../../domain"
 import type { FlightLeg, FlightOption, Passengers, ScrapeRequest, ScraperError, SeatClass, TripType } from "../../domain"
@@ -23,7 +23,7 @@ import { footerHints, spinnerFrame, SPINNER_INTERVAL_MS, type HintItem, type Hin
 import { formatSequence, isBindingActive } from "../keymap"
 import { appKeymap, type AppCtx } from "../keymaps"
 import { keylog, useOpenTuiKeymap } from "../keys-adapter"
-import { MAX_ADDITIONAL_LEGS, type LegDraft, type MultiCityFlowState } from "../state"
+import { MAX_ADDITIONAL_LEGS, type LegDraft } from "../state"
 
 export type AppRuntime = ManagedRuntime.ManagedRuntime<ScraperService | HttpClient.HttpClient, never>
 
@@ -64,8 +64,10 @@ export interface ShellState {
   readonly errorMessage?: string | undefined
   readonly status: string
   readonly lastRequest?: ScrapeRequest | undefined
-  readonly multiCityFlow?: MultiCityFlowState | undefined
-  readonly multiCityLegs?: readonly FlightLeg[] | undefined
+  /** The picker step currently awaiting a choice, while picking multi-city legs */
+  readonly multiCityFlow?: PickLeg | undefined
+  /** The finished multi-city itinerary behind the current results */
+  readonly multiCityItinerary?: readonly ItineraryLeg[] | undefined
   readonly table: TableState
   readonly palette: PaletteState
 }
@@ -285,7 +287,7 @@ export const useAppShell = (runtime: AppRuntime) => {
       return
     }
 
-    update((s) => ({ ...s, multiCityFlow: undefined, multiCityLegs: undefined }))
+    update((s) => ({ ...s, multiCityFlow: undefined, multiCityItinerary: undefined }))
     startSearching(`Searching ${routeSummary(snap.form)}...`)
 
     const program = Effect.gen(function* () {
@@ -313,13 +315,28 @@ export const useAppShell = (runtime: AppRuntime) => {
     }
   }
 
+  /** Applies a picker step to the shell: options to pick from, or the finished itinerary */
+  const applyPickerStep = (step: PickLeg | { _tag: "Complete"; itinerary: readonly ItineraryLeg[] }) =>
+    update((s) => ({
+      ...s,
+      isSearching: false,
+      multiCityFlow: step._tag === "PickLeg" ? step : undefined,
+      multiCityItinerary: step._tag === "Complete" ? step.itinerary : undefined,
+      results: step._tag === "PickLeg"
+        ? step.options.map((option) => option.flight)
+        : step.itinerary.map((entry) => entry.flight),
+      priceLevel: undefined,
+      status: "",
+      table: { ...s.table, selectedRow: 0, selectedCol: 0 },
+    }))
+
   const doMultiCityStart = async (candidate: unknown) => {
-    update((s) => ({ ...s, multiCityFlow: undefined, multiCityLegs: undefined, results: [] }))
+    update((s) => ({ ...s, multiCityFlow: undefined, multiCityItinerary: undefined, results: [] }))
     startSearching(`Searching ${routeSummary(stateRef.current.form)}...`)
 
     const program = Effect.gen(function* () {
       const request = yield* decodeRequest(candidate)
-      const session = yield* startMultiCitySession({
+      const step = yield* startMultiCityPicker({
         from: request.from,
         to: request.to,
         departDate: request.departDate,
@@ -328,79 +345,39 @@ export const useAppShell = (runtime: AppRuntime) => {
         passengers: request.passengers,
         currency: request.currency,
       })
-      const options = yield* fetchCurrentLegOptions(session)
-      return { request, session, options }
+      return { request, step }
     })
 
     const exit = await runtime.runPromiseExit(program)
 
-    if (Exit.isSuccess(exit) && exit.value.options.length > 0) {
-      const { request, session, options } = exit.value
-      update((s) => ({
-        ...s,
-        isSearching: false,
-        lastRequest: request,
-        multiCityFlow: { session, options, chosenFlights: [] },
-        results: options.map((option) => option.flight),
-        priceLevel: undefined,
-        status: "",
-        table: { ...s.table, selectedRow: 0, selectedCol: 0 },
-      }))
-    } else if (Exit.isSuccess(exit)) {
-      update((s) => ({
-        ...s,
-        isSearching: false,
-        errorMessage: `No flights found for leg 1 (${stateRef.current.form.origin} -> ${stateRef.current.form.destination})`,
-        status: "",
-      }))
+    if (Exit.isSuccess(exit)) {
+      const { request, step } = exit.value
+      update((s) => ({ ...s, lastRequest: request }))
+      applyPickerStep(step)
     } else {
       update((s) => ({ ...s, isSearching: false, errorMessage: `${exit.cause}`, status: "" }))
     }
   }
 
   const chooseMultiCityLeg = async (flight: FlightOption) => {
-    const snap = stateRef.current
-    const flow = snap.multiCityFlow
+    const flow = stateRef.current.multiCityFlow
     if (!flow) return
-    const choice = flow.options.find((option) => option.flight.flight_number === flight.flight_number)
+    const choice = flow.options.find((option) => option.flight === flight)
     if (!choice) return
 
-    const chosenFlights = [...flow.chosenFlights, choice.flight]
-    const session = chooseLegOption(flow.session, choice)
-
-    if (isMultiCitySessionComplete(session)) {
-      update((s) => ({
-        ...s,
-        multiCityFlow: undefined,
-        multiCityLegs: [...session.legs],
-        results: chosenFlights,
-        status: "",
-        table: { ...s.table, selectedRow: 0, selectedCol: 0 },
-      }))
-      return
-    }
-
     update((s) => ({ ...s, results: [] }))
-    startSearching(`Fetching leg ${session.legIndex + 1} of ${session.legs.length}...`)
+    startSearching(`Confirming leg ${flow.legIndex + 1} of ${flow.legCount}...`)
 
-    const exit = await runtime.runPromiseExit(fetchCurrentLegOptions(session))
+    const exit = await runtime.runPromiseExit(chooseMultiCityOption(flow, choice))
 
-    if (Exit.isSuccess(exit) && exit.value.length > 0) {
-      const options = exit.value
-      update((s) => ({
-        ...s,
-        isSearching: false,
-        multiCityFlow: { session, options, chosenFlights },
-        results: options.map((option) => option.flight),
-        status: "",
-        table: { ...s.table, selectedRow: 0, selectedCol: 0 },
-      }))
+    if (Exit.isSuccess(exit)) {
+      applyPickerStep(exit.value)
     } else {
       update((s) => ({
         ...s,
         isSearching: false,
         multiCityFlow: undefined,
-        errorMessage: Exit.isSuccess(exit) ? `No flights found for leg ${session.legIndex + 1}` : `${exit.cause}`,
+        errorMessage: `${exit.cause}`,
         status: "",
       }))
     }
@@ -426,12 +403,8 @@ export const useAppShell = (runtime: AppRuntime) => {
         })
       )
 
-      if (Exit.isSuccess(exit) && exit.value.length > 0) {
-        const cheapest = exit.value.reduce((best, option) => {
-          const bestPrice = parseFloat(best.price?.replace(/[^0-9.]/g, "") ?? "")
-          const optionPrice = parseFloat(option.price?.replace(/[^0-9.]/g, "") ?? "")
-          return !isNaN(optionPrice) && (isNaN(bestPrice) || optionPrice < bestPrice) ? option : best
-        })
+      const cheapest = Exit.isSuccess(exit) ? cheapestBookingOption(exit.value) : undefined
+      if (cheapest) {
         openInBrowser(cheapest.url)
         flash(`Opening ${cheapest.provider}${cheapest.price ? ` (${cheapest.price})` : ""} in your browser...`)
         return
@@ -459,11 +432,11 @@ export const useAppShell = (runtime: AppRuntime) => {
     const sorted = sortFlightsByColumn([...snap.results], snap.table.sortColumn, snap.table.sortAsc)
     const selectedFlight = sorted[snap.table.selectedRow]
 
-    if (snap.multiCityFlow && !isMultiCitySessionComplete(snap.multiCityFlow.session)) {
+    if (snap.multiCityFlow) {
       void chooseMultiCityLeg(selectedFlight)
-    } else if (snap.multiCityLegs) {
-      const legIndex = snap.results.indexOf(selectedFlight)
-      void openFlight(selectedFlight, snap.multiCityLegs[legIndex])
+    } else if (snap.multiCityItinerary) {
+      const entry = snap.multiCityItinerary.find((itineraryLeg) => itineraryLeg.flight === selectedFlight)
+      void openFlight(selectedFlight, entry?.leg)
     } else {
       void openFlight(selectedFlight)
     }
@@ -492,7 +465,7 @@ export const useAppShell = (runtime: AppRuntime) => {
 
   // Runs the selected palette entry through the exact gating a keypress gets,
   // evaluated against the mode the palette opened from (setState is async, so
-  // dispatcher.runById would still see palette mode here).
+  // a dispatcher-side lookup would still see palette mode here).
   const runPaletteSelection = () => {
     const snap = stateRef.current
     const entry = paletteEntriesRef.current[snap.palette.selected]
@@ -529,7 +502,7 @@ export const useAppShell = (runtime: AppRuntime) => {
       table: {
         rowCount: s.results.length,
         selectedRow: s.table.selectedRow,
-        isPickingLeg: s.multiCityFlow !== undefined && !isMultiCitySessionComplete(s.multiCityFlow.session),
+        isPickingLeg: s.multiCityFlow !== undefined,
         moveRow,
         moveCol,
         setRow,
@@ -607,9 +580,9 @@ export const useAppShell = (runtime: AppRuntime) => {
     isMultiCity: state.form.tripType === "multi-city",
     canAddLeg: state.form.legs.length < MAX_ADDITIONAL_LEGS,
     canRemoveLeg: state.form.legs.length > 1,
-    isPickingLeg: state.multiCityFlow !== undefined && !isMultiCitySessionComplete(state.multiCityFlow.session),
+    isPickingLeg: state.multiCityFlow !== undefined,
     legLabel: state.multiCityFlow
-      ? `leg ${state.multiCityFlow.session.legIndex + 1}/${state.multiCityFlow.session.legs.length}`
+      ? `leg ${state.multiCityFlow.legIndex + 1}/${state.multiCityFlow.legCount}`
       : undefined,
   }
   const hints: readonly HintItem[] = footerHints(hintsCtx)
