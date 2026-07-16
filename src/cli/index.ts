@@ -3,23 +3,29 @@
  * Accepts command-line arguments and returns flight search results
  */
 
-import { Effect, Console, Layer } from "effect"
+import { Effect, Console, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
+import { NodeRuntime } from "@effect/platform-node"
 import { ScraperService, ScraperProtobufLive, ScraperProductionLive } from "../services"
-import { CacheLive, RateLimiterLive, defaultCacheConfig, defaultRateLimiterConfig } from "../utils"
-import type { TripType, SeatClass, Passengers, FlightFilters, SortOption, FlightOption } from "../domain"
+import { RateLimiterLive, defaultRateLimiterConfig } from "../utils"
+import {
+  AirportCodeSchema, DateStringSchema, TripTypeSchema, SeatClassSchema, SortOptionSchema,
+  PassengersSchema, FlightFiltersSchema
+} from "../domain"
+import type { ScrapeRequest, FlightFilters, FlightOption } from "../domain"
 
 /**
- * CLI Arguments interface
+ * CLI Arguments interface. Values are kept as raw strings/numbers here;
+ * `cliProgram` below decodes and validates them against the domain schemas.
  */
 interface CliArgs {
   from?: string
   to?: string
   departDate?: string
-  tripType?: "one-way" | "round-trip" | "multi-city"
+  tripType?: string
   returnDate?: string
-  sort?: "price-asc" | "price-desc" | "duration-asc" | "duration-desc" | "airline" | "none"
-  seat?: "economy" | "premium-economy" | "business" | "first"
+  sort?: string
+  seat?: string
   adults?: number
   children?: number
   infantsInSeat?: number
@@ -27,7 +33,7 @@ interface CliArgs {
   maxPrice?: number
   minPrice?: number
   maxDuration?: number
-  maxStops?: 0 | 1 | 2
+  maxStops?: number
   nonstopOnly?: boolean
   airlines?: string[]
   limit?: number | "all"
@@ -69,22 +75,16 @@ function parseArgs(): CliArgs {
         i++
         break
       case "--trip-type":
-        if (nextArg && ["one-way", "round-trip", "multi-city"].includes(nextArg)) {
-          parsed.tripType = nextArg as TripType
-        }
+        if (nextArg) parsed.tripType = nextArg
         i++
         break
       case "--sort":
       case "-s":
-        if (nextArg && ["price-asc", "price-desc", "duration-asc", "duration-desc", "airline", "none"].includes(nextArg)) {
-          parsed.sort = nextArg as SortOption
-        }
+        if (nextArg) parsed.sort = nextArg
         i++
         break
       case "--seat":
-        if (nextArg && ["economy", "premium-economy", "business", "first"].includes(nextArg)) {
-          parsed.seat = nextArg as SeatClass
-        }
+        if (nextArg) parsed.seat = nextArg
         i++
         break
       case "--adults":
@@ -118,7 +118,7 @@ function parseArgs(): CliArgs {
         i++
         break
       case "--max-stops":
-        if (nextArg) parsed.maxStops = parseInt(nextArg, 10) as 0 | 1 | 2
+        if (nextArg) parsed.maxStops = parseInt(nextArg, 10)
         i++
         break
       case "--nonstop-only":
@@ -218,16 +218,32 @@ Examples:
  */
 function formatFlight(flight: FlightOption, index: number): string {
   const bestBadge = flight.is_best ? "⭐ " : ""
-  const departureArrival = flight.departure && flight.arrival 
-    ? `${flight.departure} → ${flight.arrival}` 
+  const departureArrival = flight.departure && flight.arrival
+    ? `${flight.departure} → ${flight.arrival}`
     : ""
   const timeAhead = flight.arrival_time_ahead ? ` (${flight.arrival_time_ahead})` : ""
   const stopsText = flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`
   const delay = flight.delay ? ` | Delay: ${flight.delay}` : ""
-  
+
   return `${index + 1}. ${bestBadge}${flight.name}
    ${departureArrival}${timeAhead}
    ${flight.duration} | ${stopsText} | ${flight.price}${delay}`
+}
+
+/**
+ * Decodes a raw CLI value against a domain schema, exiting with a helpful
+ * error message if it fails validation. Keeps enum/range rules defined once,
+ * in the domain schemas, instead of duplicated as ad-hoc checks here.
+ * Exiting on a malformed flag is acceptable in this startup path.
+ */
+function decodeOrExit<A>(schema: Schema.ConstraintDecoder<A>, value: unknown, label: string): A {
+  try {
+    return Schema.decodeUnknownSync(schema)(value)
+  } catch (error) {
+    console.error(`Error: invalid ${label}`)
+    console.error(error instanceof Error ? error.message : String(error))
+    return process.exit(1)
+  }
 }
 
 /**
@@ -243,44 +259,67 @@ export const cliProgram = Effect.gen(function* () {
     return process.exit(1)
   }
 
-  // Build search parameters
-  const tripType: TripType = args.tripType || "one-way"
-  const returnDate = args.returnDate
-  const sortOption: SortOption = args.sort || "price-asc"
-  const seat: SeatClass = args.seat || "economy"
-  
-  const passengers: Passengers = {
-    adults: args.adults || 1,
-    children: args.children || 0,
-    infants_in_seat: args.infantsInSeat || 0,
-    infants_on_lap: args.infantsOnLap || 0
-  }
+  // Build the search request, decoding each raw value against its domain schema
+  const from = decodeOrExit(AirportCodeSchema, args.from.toUpperCase(), "--from")
+  const to = decodeOrExit(AirportCodeSchema, args.to.toUpperCase(), "--to")
+  const departDate = decodeOrExit(DateStringSchema, args.departDate, "--depart-date")
+  const returnDate = args.returnDate === undefined
+    ? undefined
+    : decodeOrExit(DateStringSchema, args.returnDate, "--return-date")
+  const tripType = args.tripType === undefined
+    ? "one-way" as const
+    : decodeOrExit(TripTypeSchema, args.tripType, "--trip-type")
+  const sortOption = args.sort === undefined
+    ? "price-asc" as const
+    : decodeOrExit(SortOptionSchema, args.sort, "--sort")
+  const seat = args.seat === undefined
+    ? "economy" as const
+    : decodeOrExit(SeatClassSchema, args.seat, "--seat")
 
-  const filters: FlightFilters = {
-    maxPrice: args.maxPrice,
-    minPrice: args.minPrice,
-    maxDurationMinutes: args.maxDuration,
-    max_stops: args.maxStops,
-    nonstopOnly: args.nonstopOnly,
-    airlines: args.airlines ? [...args.airlines] : undefined,
-    limit: args.limit || 10
-  }
+  const passengers = decodeOrExit(PassengersSchema, {
+    adults: args.adults ?? 1,
+    children: args.children ?? 0,
+    infants_in_seat: args.infantsInSeat ?? 0,
+    infants_on_lap: args.infantsOnLap ?? 0
+  }, "passenger counts")
 
-  const currency = args.currency || ""
+  // Filters use optional keys: only include the flags that were actually set
+  const filters: FlightFilters = decodeOrExit(FlightFiltersSchema, {
+    ...(args.maxPrice !== undefined && { maxPrice: args.maxPrice }),
+    ...(args.minPrice !== undefined && { minPrice: args.minPrice }),
+    ...(args.maxDuration !== undefined && { maxDurationMinutes: args.maxDuration }),
+    ...(args.maxStops !== undefined && { max_stops: args.maxStops }),
+    ...(args.nonstopOnly !== undefined && { nonstopOnly: args.nonstopOnly }),
+    ...(args.airlines !== undefined && { airlines: [...args.airlines] }),
+    limit: args.limit ?? 10
+  }, "filters")
+
+  const request: ScrapeRequest = {
+    from,
+    to,
+    departDate,
+    tripType,
+    ...(returnDate !== undefined && { returnDate }),
+    sortOption,
+    filters,
+    seat,
+    passengers,
+    ...(args.currency !== undefined && { currency: args.currency })
+  }
 
   // Log search parameters (unless JSON output)
   if (!args.json) {
     const tripDescription = returnDate ? ` (Return: ${returnDate})` : ` (${tripType})`
-    yield* Console.log(`🕷️  Starting Flight Scraper: ${args.from} -> ${args.to} on ${args.departDate}${tripDescription}`)
+    yield* Console.log(`🕷️  Starting Flight Scraper: ${from} -> ${to} on ${departDate}${tripDescription}`)
     yield* Console.log(`👥 Passengers: ${passengers.adults} adult(s), ${passengers.children} child(ren)`)
     yield* Console.log(`💺 Seat class: ${seat}`)
     yield* Console.log(`📊 Sorting by: ${sortOption}`)
-    
+
     const activeFilters = Object.entries(filters)
       .filter(([, value]) => value !== undefined)
       .map(([key, value]) => `${key}: ${value}`)
       .join(", ")
-    
+
     if (activeFilters) {
       yield* Console.log(`🔍 Filters: ${activeFilters}`)
     }
@@ -290,22 +329,8 @@ export const cliProgram = Effect.gen(function* () {
     }
   }
 
-  // Get scraper service
   const scraper = yield* ScraperService
-
-  // Execute search
-  const result = yield* scraper.scrape(
-    args.from,
-    args.to,
-    args.departDate,
-    tripType,
-    returnDate,
-    sortOption,
-    filters,
-    seat,
-    passengers,
-    currency
-  )
+  const result = yield* scraper.scrape(request)
 
   // Output results
   if (args.json) {
@@ -315,16 +340,18 @@ export const cliProgram = Effect.gen(function* () {
       yield* Console.warn("❌ No flights found")
     } else {
       yield* Console.log(`\n✅ Found ${result.flights.length} flight options:`)
-      
+
       if (result.current_price) {
         yield* Console.log(`💰 Price level: ${result.current_price.toUpperCase()}\n`)
       }
-      
+
       result.flights.forEach((flight, i) => {
         console.log(formatFlight(flight, i))
         console.log("")
       })
     }
+
+    yield* Console.log("\n--- COMPLETE ---")
   }
 
   return result
@@ -336,7 +363,6 @@ export const cliProgram = Effect.gen(function* () {
 export const createCliLayer = (production: boolean = false) => {
   if (production) {
     return ScraperProductionLive.pipe(
-      Layer.provide(CacheLive(defaultCacheConfig)),
       Layer.provide(RateLimiterLive(defaultRateLimiterConfig)),
       Layer.provide(FetchHttpClient.layer)
     )
@@ -348,25 +374,14 @@ export const createCliLayer = (production: boolean = false) => {
 }
 
 /**
- * Runs the CLI program
+ * Runs the CLI program via the platform runtime, which handles interrupts,
+ * finalizers, and process exit codes.
  */
-export const runCli = (production: boolean = false) => {
+export const runCli = (production: boolean = false): void => {
   const program = cliProgram.pipe(
     Effect.provide(createCliLayer(production)),
-    Effect.match({
-      onFailure: (error) => {
-        console.error("\n--- ERROR ---")
-        console.error(error)
-        process.exit(1)
-      },
-      onSuccess: (result) => {
-        if (!process.argv.includes("--json") && !process.argv.includes("-j")) {
-          console.log("\n--- COMPLETE ---")
-        }
-        process.exit(0)
-      }
-    })
+    Effect.tapError((error) => Console.error(`\n--- ERROR ---\n${error.message}`))
   )
 
-  return Effect.runPromise(program)
+  NodeRuntime.runMain(program, { disableErrorReporting: true })
 }

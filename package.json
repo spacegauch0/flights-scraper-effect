@@ -8,19 +8,26 @@
     "start": "bun run src/cli.ts",
     "cli": "bun run src/cli.ts",
     "tui": "bun run src/cli.ts --tui",
-    "production": "bun run src/cli.ts --production"
+    "tui:mock": "FLIGHTS_TUI_MOCK=1 bun run src/cli.ts --tui",
+    "production": "bun run src/cli.ts --production",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test/"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.93",
-    "@opentui/core": "^0.1.70",
-    "cheerio": "^1.1.2",
+    "@opentui/core": "^0.4.2",
+    "@opentui/react": "0.4.2",
+    "cheerio": "^1.2.0",
     "effect": "4.0.0-beta.93",
-    "protobufjs": "^8.0.0",
-    "puppeteer": "^24.34.0"
+    "protobufjs": "^8.6.5",
+    "puppeteer": "^25.3.0",
+    "react": "19.2.7",
+    "scheduler": "0.27.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3",
+    "@types/node": "^26.1.0",
+    "@types/react": "19.2.17",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

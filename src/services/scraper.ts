@@ -4,22 +4,13 @@
  */
 
 import { Effect, Context } from "effect"
-import { Result, ScraperError, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
+import { Result, ScraperError, ScrapeRequest } from "../domain"
 
 /**
- * Service Definition for flight scraping operations
+ * Service Definition for flight scraping operations.
+ * Callers construct a validated ScrapeRequest (decode untrusted input against
+ * ScrapeRequestSchema at the boundary) and receive a parsed Result.
  */
 export class ScraperService extends Context.Service<ScraperService, {
-  readonly scrape: (
-    from: string,
-    to: string,
-    departDate: string,
-    tripType: TripType,
-    returnDate: string | undefined,
-    sortOption: SortOption,
-    filters: FlightFilters,
-    seat?: SeatClass,
-    passengers?: Passengers,
-    currency?: string
-  ) => Effect.Effect<Result, ScraperError>
+  readonly scrape: (request: ScrapeRequest) => Effect.Effect<Result, ScraperError>
 }>()("ScraperService") {}

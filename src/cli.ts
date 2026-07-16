@@ -14,7 +14,7 @@ if (isTuiMode && !args.includes("--help") && !args.includes("-h")) {
   // Run TUI
   runTui().catch(console.error)
 } else {
-  // Run CLI
+  // Run CLI (NodeRuntime.runMain manages exit codes and interrupts)
   const production = args.includes("--production") || args.includes("-p")
-  runCli(production).catch(console.error)
+  runCli(production)
 }

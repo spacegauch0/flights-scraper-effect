@@ -2,332 +2,161 @@
  * Production-ready scraper with caching, rate limiting, and retry logic
  */
 
-import { Effect, Layer, Console } from "effect"
+import { Cache, Console, Duration, Effect, Equal, Exit, Hash, Layer, Schedule } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { ScraperService } from "./scraper"
-import { FlightOption, ScraperError, ScraperErrors, Result, SortOption, FlightFilters, TripType, SeatClass, Passengers } from "../domain"
-import { encodeFlightSearch, FlightData as ProtobufFlightData } from "../utils/protobuf"
-import { CacheService, createCacheKey } from "../utils/cache"
+import { Result, ScrapeRequest, ScraperError, ScraperErrors } from "../domain"
+import { buildFlightUrl, FlightData as ProtobufFlightData } from "../utils/protobuf"
 import { RateLimiterService } from "../utils/rate-limiter"
-import { withRetryAndLog } from "../utils/retry"
-import * as cheerio from "cheerio"
+import { applyFiltersSortAndLimit } from "./flight-parsing"
+import { fetchMultiCityItinerary } from "./multi-city"
+import { extractFlights, fetchSearchPage } from "./search-page"
+
+const CACHE_CAPACITY = 100
+const CACHE_TTL = Duration.minutes(15)
 
 /**
- * Fetches the Google Flights HTML via HTTP with retry logic using Effect Platform HttpClient
- * Requires RateLimiterService and HttpClient in context
+ * Cache key: a canonical id covering every parameter that changes the fetched
+ * page (route, dates, trip type, seat, passengers, currency, pre-filters,
+ * legs), paired with the effect that computes the result on a miss. Equality
+ * and hashing go through the id, so identical concurrent searches share one
+ * in-flight fetch.
  */
-const fetchFlightsHtml = (url: string): Effect.Effect<string, ScraperError, RateLimiterService | HttpClient.HttpClient> =>
-  Effect.gen(function* () {
-    // Acquire rate limit token
-    const rateLimiter = yield* RateLimiterService
-    yield* rateLimiter.acquire()
+class SearchKey implements Equal.Equal {
+  constructor(
+    readonly id: string,
+    readonly compute: Effect.Effect<Result, ScraperError>
+  ) {}
 
-    // Fetch with retry using Effect Platform HttpClient
-    return yield* withRetryAndLog(
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
-        
-        const response = yield* client.get(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Cache-Control": "max-age=0"
-          }
-        }).pipe(
-          Effect.mapError((error) => ScraperErrors.navigationFailed(url, String(error)))
-        )
+  [Equal.symbol](that: Equal.Equal): boolean {
+    return that instanceof SearchKey && that.id === this.id
+  }
 
-        const body = yield* response.text.pipe(
-          Effect.mapError((error) => ScraperErrors.navigationFailed(url, `Failed to read response: ${String(error)}`))
-        )
-
-        return body
-      }),
-      "Fetch Google Flights HTML"
-    )
-  })
-
-/**
- * Extracts flight data from Google Flights HTML
- * Uses HTML parsing as the primary method (more reliable than JavaScript data extraction)
- */
-const extractJavaScriptData = (html: string): Effect.Effect<Result, ScraperError> =>
-  Effect.try({
-    try: () => parseHtmlFallback(html),
-    catch: (e) => ScraperErrors.parsingError(String(e))
-  })
-
-/**
- * Fallback HTML parser
- */
-const parseHtmlFallback = (html: string): Result => {
-  const $ = cheerio.load(html)
-  const flights: FlightOption[] = []
-  const cards = $('li.pIav2d')
-  
-  cards.each((index, element) => {
-    const card = $(element)
-    const text = card.text()
-
-    const priceMatch = text.match(/(?:ARS|USD|EUR|GBP|\$)\s*[\u00A0\s]*(\d{1,3}(?:[,\s]\d{3})*|\d+)/)
-    const price = priceMatch ? priceMatch[0] : "N/A"
-
-    let airline = "Unknown"
-    const airlineElements = card.find('.sSHqwe')
-    for (let i = 0; i < airlineElements.length; i++) {
-      const currentAirlineText = $(airlineElements[i]).text().trim()
-      if (currentAirlineText && !currentAirlineText.includes("kg CO2") && !currentAirlineText.includes("Aged")) {
-        airline = currentAirlineText
-        break
-      }
-    }
-
-    const duration = card.find('.gvkrdb').text().trim() || "N/A"
-    const nonstop = text.includes("Nonstop")
-    const stops = nonstop ? 0 : 1
-
-    // Deep link - try to extract booking URL from the flight card
-    // Google Flights booking URLs look like: /travel/flights/booking?tfs=...&tfu=...&curr=...
-    let deep_link: string | undefined = undefined
-    
-    // Look for booking links specifically
-    const bookingLink = card.find('a[href*="/travel/flights/booking"], a[href*="tfs="]').first()
-    if (bookingLink.length) {
-      const href = bookingLink.attr('href')
-      if (href) {
-        deep_link = href.startsWith('http') ? href : `https://www.google.com${href}`
-      }
-    }
-    
-    // Try data attributes
-    if (!deep_link) {
-      const linkEl = card.find('a[data-tfs], a[data-url*="booking"]').first()
-      if (linkEl.length) {
-        const dataTfs = linkEl.attr('data-tfs')
-        if (dataTfs) {
-          deep_link = `https://www.google.com/travel/flights/booking?tfs=${encodeURIComponent(dataTfs)}&curr=USD`
-        }
-      }
-    }
-    
-    // Try jsdata attributes for tfs parameter
-    if (!deep_link) {
-      const jsDataEl = card.find('[jsdata*="tfs"]').first()
-      if (jsDataEl.length) {
-        const jsdata = jsDataEl.attr('jsdata') || ''
-        const tfsMatch = jsdata.match(/tfs=([^&\s;]+)/)
-        if (tfsMatch) {
-          deep_link = `https://www.google.com/travel/flights/booking?tfs=${tfsMatch[1]}&curr=USD`
-        }
-      }
-    }
-
-    if (airline !== "Unknown") {
-      flights.push(new FlightOption({
-        is_best: index === 0,
-        name: airline,
-        departure: "",
-        arrival: "",
-        arrival_time_ahead: undefined,
-        duration,
-        stops,
-        delay: undefined,
-        price,
-        deep_link
-      }))
-    }
-  })
-
-  const priceIndicatorText = $("span.gOatQ").text().trim().toLowerCase()
-  let current_price: "low" | "typical" | "high" | undefined = undefined
-  if (priceIndicatorText.includes("low")) current_price = "low"
-  else if (priceIndicatorText.includes("typical")) current_price = "typical"
-  else if (priceIndicatorText.includes("high")) current_price = "high"
-
-  return new Result({
-    current_price,
-    flights
-  })
+  [Hash.symbol](): number {
+    return Hash.string(this.id)
+  }
 }
 
-/**
- * Sorting and filtering functions
- */
-const parseDurationToMinutes = (duration: string): number => {
-  const hourMatch = duration.match(/(\d+)\s*hr/)
-  const minMatch = duration.match(/(\d+)\s*min/)
-  const hours = hourMatch ? parseInt(hourMatch[1]) : 0
-  const minutes = minMatch ? parseInt(minMatch[1]) : 0
-  return hours * 60 + minutes
-}
-
-const sortFlights = (flights: readonly FlightOption[], sortOption: SortOption): FlightOption[] => {
-  if (sortOption === "none") return [...flights]
-
-  return [...flights].sort((a, b) => {
-    switch (sortOption) {
-      case "price-asc": {
-        const priceA = parseFloat(a.price.replace(/[^0-9.-]/g, "")) || 0
-        const priceB = parseFloat(b.price.replace(/[^0-9.-]/g, "")) || 0
-        return priceA - priceB
-      }
-      case "price-desc": {
-        const priceA = parseFloat(a.price.replace(/[^0-9.-]/g, "")) || 0
-        const priceB = parseFloat(b.price.replace(/[^0-9.-]/g, "")) || 0
-        return priceB - priceA
-      }
-      case "duration-asc":
-        return parseDurationToMinutes(a.duration) - parseDurationToMinutes(b.duration)
-      case "duration-desc":
-        return parseDurationToMinutes(b.duration) - parseDurationToMinutes(a.duration)
-      case "airline":
-        return a.name.localeCompare(b.name)
-      default:
-        return 0
-    }
-  })
-}
-
-const filterFlights = (flights: readonly FlightOption[], filters: FlightFilters): FlightOption[] => {
-  return flights.filter(flight => {
-    const price = parseFloat(flight.price.replace(/[^0-9.-]/g, "")) || 0
-    const durationMinutes = parseDurationToMinutes(flight.duration)
-
-    if (filters.maxPrice !== undefined && price > filters.maxPrice) return false
-    if (filters.minPrice !== undefined && price < filters.minPrice) return false
-    if (filters.maxDurationMinutes !== undefined && durationMinutes > filters.maxDurationMinutes) return false
-    
-    if (filters.airlines && filters.airlines.length > 0) {
-      const matchesAirline = filters.airlines.some(airline =>
-        flight.name.toLowerCase().includes(airline.toLowerCase())
-      )
-      if (!matchesAirline) return false
-    }
-
-    if (filters.nonstopOnly && flight.stops !== 0) return false
-    if (filters.max_stops !== undefined && flight.stops > filters.max_stops) return false
-
-    return true
-  })
+const searchId = (request: ScrapeRequest): string => {
+  const { from, to, departDate, tripType, returnDate, filters, seat, passengers, currency, additionalLegs } = request
+  return [
+    from,
+    to,
+    departDate,
+    tripType,
+    returnDate ?? "none",
+    seat,
+    passengers.adults,
+    passengers.children,
+    passengers.infants_in_seat,
+    passengers.infants_on_lap,
+    currency ?? "none",
+    filters.max_stops ?? "any",
+    filters.airlines && filters.airlines.length > 0 ? [...filters.airlines].sort().join("+") : "any",
+    additionalLegs?.map((leg) => `${leg.from}-${leg.to}-${leg.date}`).join(",") ?? ""
+  ].join("|")
 }
 
 /**
  * Production-ready scraper implementation with caching, rate limiting, and retry
- * Requires CacheService, RateLimiterService, and HttpClient to be provided via Layer
+ * Requires RateLimiterService and HttpClient to be provided via Layer
  */
 export const ScraperProductionLive = Layer.effect(
   ScraperService,
   Effect.gen(function* () {
-    const cache = yield* CacheService
     const rateLimiter = yield* RateLimiterService
-    const httpClient = yield* HttpClient.HttpClient
+
+    // Classify status before parsing (a 429/5xx/consent page is a typed
+    // failure, not an empty flight list) and retry transient failures with
+    // jittered exponential backoff.
+    const httpClient = (yield* HttpClient.HttpClient).pipe(
+      HttpClient.filterStatusOk,
+      HttpClient.retryTransient({
+        times: 3,
+        schedule: Schedule.exponential("1 second").pipe(Schedule.jittered)
+      })
+    )
+
+    // Raw (pre client-side filtering) results per search. Only successes are
+    // cached: a zero TTL on failure keeps transient errors out of the cache.
+    const cache = yield* Cache.makeWith((key: SearchKey) => key.compute, {
+      capacity: CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? CACHE_TTL : Duration.zero)
+    })
 
     return ScraperService.of({
-      scrape: (from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency) =>
-        Effect.gen(function* () {
-          // Validate input
-          if (tripType === "round-trip" && !returnDate) {
-            return yield* Effect.fail(ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights"))
-          }
+      scrape: Effect.fn("Scraper.scrape")(function* (request: ScrapeRequest) {
+        const { from, to, departDate, tripType, returnDate, sortOption, filters, seat, passengers, currency, additionalLegs } = request
 
-          // Defaults
-          const seatClass: SeatClass = seat || "economy"
-          const passengerCounts: Passengers = passengers || { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }
-          const curr = currency || ""
+        // Validate cross-field rules the schema can't express
+        if (tripType === "round-trip" && !returnDate) {
+          return yield* Effect.fail(ScraperErrors.invalidInput("returnDate", "Return date is required for round-trip flights"))
+        }
+        if (tripType === "multi-city" && (!additionalLegs || additionalLegs.length === 0)) {
+          return yield* Effect.fail(ScraperErrors.invalidInput("additionalLegs", "At least one additional leg is required for multi-city flights."))
+        }
 
-          // Check cache
-          const cacheKey = createCacheKey(
-            from, to, departDate, tripType, returnDate,
-            seatClass,
-            passengerCounts.adults,
-            passengerCounts.children,
-            passengerCounts.infants_in_seat,
-            passengerCounts.infants_on_lap
-          )
+        // Rate-limit acquisition happens inside the computed effect so cache
+        // hits never consume a request slot. Multi-city is rate-limited as a
+        // single unit rather than per sub-request.
+        const fetchFresh: Effect.Effect<Result, ScraperError, HttpClient.HttpClient> =
+          tripType === "multi-city" && additionalLegs
+            ? Effect.gen(function* () {
+                yield* rateLimiter.acquire()
+                yield* Console.log(`🚀 Scraping multi-city itinerary (${additionalLegs.length + 1} legs)...`)
+                return yield* fetchMultiCityItinerary({ from, to, departDate, additionalLegs, seat, passengers, currency })
+              })
+            : Effect.gen(function* () {
+                yield* rateLimiter.acquire()
 
-          const cached = yield* cache.get(cacheKey)
-          if (cached) {
-            yield* Console.log("📦 Cache hit! Using cached results")
-            
-            // Still apply client-side filtering and sorting
-            const filteredFlights = filterFlights(cached.flights, filters)
-            const sortedFlights = sortFlights(filteredFlights, sortOption)
-            const limitedFlights = typeof filters.limit === "number" 
-              ? sortedFlights.slice(0, filters.limit) 
-              : sortedFlights
+                const flightData: ProtobufFlightData[] = [{
+                  date: departDate,
+                  from_airport: from,
+                  to_airport: to,
+                  max_stops: filters.max_stops,
+                  airlines: filters.airlines
+                }]
 
-            return new Result({ current_price: cached.current_price, flights: limitedFlights })
-          }
-          
-          yield* Console.log("🔍 Cache miss, fetching from Google Flights")
+                if (tripType === "round-trip" && returnDate) {
+                  flightData.push({
+                    date: returnDate,
+                    from_airport: to,
+                    to_airport: from,
+                    max_stops: filters.max_stops,
+                    airlines: filters.airlines
+                  })
+                }
 
-          // Build flight data
-          const flightData: ProtobufFlightData[] = [{
-            date: departDate,
-            from_airport: from,
-            to_airport: to,
-            max_stops: filters.max_stops,
-            airlines: filters.airlines
-          }]
+                const url = yield* buildFlightUrl(flightData, tripType, seat, passengers, currency ?? "")
 
-          if (tripType === "round-trip" && returnDate) {
-            flightData.push({
-              date: returnDate,
-              from_airport: to,
-              to_airport: from,
-              max_stops: filters.max_stops,
-              airlines: filters.airlines
-            })
-          }
+                yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
 
-          // Encode to tfs parameter
-          const tfs = yield* encodeFlightSearch(flightData, tripType, seatClass, passengerCounts)
-          
-          // Build URL
-          const params = new URLSearchParams({ tfs, hl: "en", tfu: "EgQIABABIgA" })
-          if (curr) params.set("curr", curr)
-          const url = `https://www.google.com/travel/flights?${params.toString()}`
+                const html = yield* fetchSearchPage(url)
+                yield* Console.log(`📄 Received ${html.length} bytes of HTML`)
 
-          yield* Console.log(`🚀 Fetching flights via HTTP: ${url.substring(0, 100)}...`)
+                const result = yield* extractFlights(html)
+                yield* Console.log(`✈️  Extracted ${result.flights.length} raw flight entries`)
 
-          // Fetch HTML - provide RateLimiterService and HttpClient from Layer context
-          const html = yield* fetchFlightsHtml(url).pipe(
-            Effect.provide(Layer.succeed(RateLimiterService, rateLimiter)),
-            Effect.provide(Layer.succeed(HttpClient.HttpClient, httpClient)),
-            Effect.tap((html) => Console.log(`📄 Received ${html.length} bytes of HTML`))
-          )
+                if (result.current_price) {
+                  yield* Console.log(`💰 Price indicator: ${result.current_price}`)
+                }
 
-          // Parse HTML
-          const result = yield* extractJavaScriptData(html).pipe(
-            Effect.tap((r) => Console.log(`✈️  Extracted ${r.flights.length} raw flight entries`))
-          )
+                return result
+              })
 
-          if (result.current_price) {
-            yield* Console.log(`💰 Price indicator: ${result.current_price}`)
-          }
+        const key = new SearchKey(
+          searchId(request),
+          fetchFresh.pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+        )
 
-          // Cache the raw results
-          yield* cache.set(cacheKey, result).pipe(
-            Effect.tap(() => Console.log("💾 Cached search results"))
-          )
+        const hit = yield* Cache.has(cache, key)
+        const result = yield* Cache.get(cache, key)
+        yield* Console.log(hit ? "📦 Cache hit! Using cached results" : "💾 Cached fresh search results")
 
-          // Apply filters and sorting
-          const filteredFlights = filterFlights(result.flights, filters)
-          const sortedFlights = sortFlights(filteredFlights, sortOption)
-          const limitedFlights = typeof filters.limit === "number"
-            ? sortedFlights.slice(0, filters.limit)
-            : sortedFlights
-
-          return new Result({ current_price: result.current_price, flights: limitedFlights })
-        })
+        return tripType === "multi-city"
+          ? result
+          : applyFiltersSortAndLimit(result, filters, sortOption)
+      })
     })
   })
 )
-

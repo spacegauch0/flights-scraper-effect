@@ -5,15 +5,20 @@
  * 
  * @example
  * ```typescript
- * import { Effect } from "effect"
- * import { ScraperService, ScraperProtobufLive } from "flights-scraper-effect"
- * 
+ * import { Effect, Schema } from "effect"
+ * import { ScraperService, ScraperProtobufLive, ScrapeRequestSchema } from "flights-scraper-effect"
+ *
  * const program = Effect.gen(function* () {
+ *   const request = yield* Schema.decodeUnknownEffect(ScrapeRequestSchema)({
+ *     from: "JFK", to: "LHR", departDate: "2026-01-19", tripType: "one-way",
+ *     sortOption: "price-asc", filters: { limit: 10 }, seat: "economy",
+ *     passengers: { adults: 1, children: 0, infants_in_seat: 0, infants_on_lap: 0 }
+ *   })
  *   const scraper = yield* ScraperService
- *   const result = yield* scraper.scrape("JFK", "LHR", "2026-01-19", "one-way", undefined, "price-asc", { limit: 10 })
+ *   const result = yield* scraper.scrape(request)
  *   console.log(`Found ${result.flights.length} flights`)
  * })
- * 
+ *
  * Effect.runPromise(program.pipe(Effect.provide(ScraperProtobufLive)))
  * ```
  */
